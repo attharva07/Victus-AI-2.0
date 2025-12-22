@@ -17,12 +17,12 @@ class ProductivityExecutor:
             raise ExecutionError("Execution refused: missing policy signature")
         results = {}
         for step in plan.steps:
-            plugin = self._get_plugin(step.action)
+            plugin = self._get_plugin(step.tool)
             plugin.validate_args(step.action, step.args)
             results[step.id] = plugin.execute(step.action, step.args, approval)
         return results
 
-    def _get_plugin(self, action: str) -> BasePlugin:
-        if action not in self.plugins:
-            raise ExecutionError(f"No plugin registered for productivity action '{action}'")
-        return self.plugins[action]
+    def _get_plugin(self, tool: str) -> BasePlugin:
+        if tool not in self.plugins:
+            raise ExecutionError(f"No plugin registered for productivity tool '{tool}'")
+        return self.plugins[tool]

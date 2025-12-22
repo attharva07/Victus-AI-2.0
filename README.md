@@ -29,6 +29,16 @@ Failure at any stage stops the flow and returns a safe error.
 - Baseline policy gate, executor, schemas, and audit logger are implemented and covered by unit flow tests.
 - `victus/app.py` wires Router → Planner → Policy → Executor → Audit so interfaces can call a single entry point (`VictusApp.run_request`).
 
+## Phase 2 Completion
+- Phase 2 hardening is complete. Stubs are replaced with working components and end-to-end enforcement.
+- Completed outcomes:
+  - Policy engine validates allowlists/denylists, enforces domain segregation, and requires confirmation for sensitive actions (e.g., `gmail.send`).
+  - Execution engine only runs approved step IDs, rejects missing signatures, and delegates to validated domain plugins.
+  - System/productivity plugins now validate inputs for allowlisted actions (`system.open_app`, `system.net_snapshot`, `gmail.send`, `docs.create`, `openai.draft`, `spotify.play`).
+  - Router → Planner → Policy → Executor → Audit flow is fully wired in `VictusApp` with mixed-domain plans supported.
+  - Tests cover policy gates, executor behavior, plugin validation, and mixed-domain flows.
+- Next focus (Phase 3): interface polish (UI/voice/hotkey), richer planner logic, and broader integration/security coverage while keeping policy-first enforcement.
+
 ## Phase 2 Kickoff
 - Phase 1 scaffolding is complete; phase 2 focuses on hardening and filling the stubs into working components.
 - Goals for this phase include:

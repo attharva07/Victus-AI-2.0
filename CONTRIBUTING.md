@@ -27,6 +27,9 @@ Phase 1 scaffolding satisfies the checklist; items are checked to reflect the cu
 - [x] Tests added/updated (unit, integration, security, regression)
 - [x] Relevant docs updated (README, DEV_GUIDE, CONTRIBUTING, POLICY)
 
+### Phase 2 (completed hardening)
+Use this checklist as a regression guard for the completed hardening work.
+
 ### Phase 2 (active development)
 Use this checklist when evaluating new changes beyond the scaffolding phase.
 - [x] Scope restated; confirm what changes and what does not
@@ -37,6 +40,9 @@ Use this checklist when evaluating new changes beyond the scaffolding phase.
 - [x] Audit logging and redaction intact; screenshot capture explicit-only
 - [x] Tests added/updated (unit, integration, security, regression)
 - [x] Relevant docs updated (README, DEV_GUIDE, CONTRIBUTING, POLICY)
+
+### Phase 3 (up next)
+Use this checklist for the next wave of changes.
 
 - [ ] Scope restated; confirm what changes and what does not
 - [ ] Policy supremacy unchanged; segmentation between System and Productivity intact

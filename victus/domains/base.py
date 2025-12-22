@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from ..schemas import Approval, ExecutionError
+from ..core.schemas import Approval, ExecutionError
 
 
 class BasePlugin:

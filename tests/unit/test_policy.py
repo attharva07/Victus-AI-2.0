@@ -2,8 +2,8 @@ from datetime import datetime
 
 import pytest
 
-from victus.policy import PolicyEngine
-from victus.schemas import Context, Plan, PlanStep, PrivacySettings, StepIO, DataOutbound, PolicyError
+from victus.core.policy import PolicyEngine
+from victus.core.schemas import Context, Plan, PlanStep, PrivacySettings, StepIO, DataOutbound, PolicyError
 
 
 @pytest.fixture

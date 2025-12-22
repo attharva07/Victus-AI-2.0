@@ -2,10 +2,10 @@ from datetime import datetime
 
 import pytest
 
-from victus.executor import ExecutionEngine
-from victus.plugins.base import DummyPlugin
-from victus.policy import PolicyEngine
-from victus.schemas import Context, Plan, PlanStep, PrivacySettings, ExecutionError
+from victus.core.executor import ExecutionEngine
+from victus.core.policy import PolicyEngine
+from victus.core.schemas import Context, Plan, PlanStep, PrivacySettings, ExecutionError
+from victus.domains.base import DummyPlugin
 
 
 def build_plan():

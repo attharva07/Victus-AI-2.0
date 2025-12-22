@@ -95,6 +95,40 @@ Phase 2 filled in the scaffolding with working validators, domain plugins, and e
 ### Phase 3 (up next)
 Use this checklist for the next iteration of improvements.
 #### Scope + Safety
+
+- [x] README updated if behavior changed
+- [x] DEV_GUIDE / CONTRIBUTING updated if workflow changed
+
+### Phase 2 (active development)
+Use this checklist for new work as we move beyond scaffolding.
+#### Scope + Safety
+- [x] Restate scope: what changes and what does not
+- [x] Confirm policy supremacy is unchanged
+- [x] Confirm segmentation (System vs Productivity) is preserved
+- [x] Confirm no raw shell / no generic exec wrappers were added
+
+#### Schemas + Interfaces
+- [x] Planner outputs Plan Schema exactly
+- [x] Policy outputs Approval Schema exactly
+- [x] Context Schema respected (privacy flags)
+- [x] Plugins implement required interface
+- [x] Plugin execution requires valid approval token/signature
+
+#### Logging + Privacy
+- [x] Audit logs generated for each request
+- [x] Secrets redacted (no tokens/passwords)
+- [x] Screenshot capture is explicit-only and logged
+
+#### Testing + Quality
+- [x] Unit tests updated/added
+- [x] Integration tests updated/added
+- [x] Security tests included for edge cases
+- [x] Regression test added for any bug fix
+
+#### Documentation
+- [x] README updated if behavior changed
+- [x] DEV_GUIDE / CONTRIBUTING updated if workflow changed
+
 - [ ] Restate scope: what changes and what does not
 - [ ] Confirm policy supremacy is unchanged
 - [ ] Confirm segmentation (System vs Productivity) is preserved

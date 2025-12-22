@@ -39,6 +39,19 @@ Failure at any stage stops the flow and returns a safe error.
   - Tests cover policy gates, executor behavior, plugin validation, and mixed-domain flows.
 - Next focus (Phase 3): interface polish (UI/voice/hotkey), richer planner logic, and broader integration/security coverage while keeping policy-first enforcement.
 
+## Phase 2 Kickoff
+- Phase 1 scaffolding is complete; phase 2 focuses on hardening and filling the stubs into working components.
+- Goals for this phase include:
+  - Implementing full planner, policy, and executor logic beyond placeholders.
+  - Replacing plugin stubs with validated, allowlisted capabilities per domain.
+  - Completing interface layers (UI/voice/hotkey) while preserving policy-first execution.
+  - Expanding tests to cover integration, security, and regression cases for the new behaviors.
+  - Updating documentation alongside any behavior change to keep policy guardrails explicit.
+- Development status updates:
+  - Policy now enforces domain segmentation: system-only plans cannot call productivity tools and vice versa unless the plan is explicitly `mixed`.
+  - Phase 2 checklists in `docs/DEV_GUIDE.md` and `CONTRIBUTING.md` are actively maintained to reflect completed validations and tests.
+
+
 ## Safety Invariants (Non-Negotiable)
 - No admin/debug bypasses, hidden overrides, or generic shell execution.
 - Plugins never execute without a valid `policy_signature`.

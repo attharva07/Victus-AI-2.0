@@ -29,6 +29,9 @@ Phase 1 scaffolding satisfies the checklist; items are checked to reflect the cu
 
 ### Phase 2 (completed hardening)
 Use this checklist as a regression guard for the completed hardening work.
+
+### Phase 2 (active development)
+Use this checklist when evaluating new changes beyond the scaffolding phase.
 - [x] Scope restated; confirm what changes and what does not
 - [x] Policy supremacy unchanged; segmentation between System and Productivity intact
 - [x] No raw shell or generic exec wrappers introduced
@@ -40,6 +43,7 @@ Use this checklist as a regression guard for the completed hardening work.
 
 ### Phase 3 (up next)
 Use this checklist for the next wave of changes.
+
 - [ ] Scope restated; confirm what changes and what does not
 - [ ] Policy supremacy unchanged; segmentation between System and Productivity intact
 - [ ] No raw shell or generic exec wrappers introduced

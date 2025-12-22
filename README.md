@@ -37,6 +37,10 @@ Failure at any stage stops the flow and returns a safe error.
   - Completing interface layers (UI/voice/hotkey) while preserving policy-first execution.
   - Expanding tests to cover integration, security, and regression cases for the new behaviors.
   - Updating documentation alongside any behavior change to keep policy guardrails explicit.
+- Development status updates:
+  - Policy now enforces domain segmentation: system-only plans cannot call productivity tools and vice versa unless the plan is explicitly `mixed`.
+  - Phase 2 checklists in `docs/DEV_GUIDE.md` and `CONTRIBUTING.md` are actively maintained to reflect completed validations and tests.
+
 
 ## Safety Invariants (Non-Negotiable)
 - No admin/debug bypasses, hidden overrides, or generic shell execution.

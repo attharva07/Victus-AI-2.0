@@ -29,6 +29,15 @@ Phase 1 scaffolding satisfies the checklist; items are checked to reflect the cu
 
 ### Phase 2 (active development)
 Use this checklist when evaluating new changes beyond the scaffolding phase.
+- [x] Scope restated; confirm what changes and what does not
+- [x] Policy supremacy unchanged; segmentation between System and Productivity intact
+- [x] No raw shell or generic exec wrappers introduced
+- [x] Plan/Approval/Context schemas preserved
+- [x] Plugins enforce approval tokens and validate inputs
+- [x] Audit logging and redaction intact; screenshot capture explicit-only
+- [x] Tests added/updated (unit, integration, security, regression)
+- [x] Relevant docs updated (README, DEV_GUIDE, CONTRIBUTING, POLICY)
+
 - [ ] Scope restated; confirm what changes and what does not
 - [ ] Policy supremacy unchanged; segmentation between System and Productivity intact
 - [ ] No raw shell or generic exec wrappers introduced

@@ -1,7 +1,7 @@
 from datetime import datetime
 
-from victus.audit import AuditLogger
-from victus.schemas import Approval, ApprovalConstraints, Context, Plan, PlanStep, PrivacySettings
+from victus.core.audit import AuditLogger
+from victus.core.schemas import Approval, ApprovalConstraints, Context, Plan, PlanStep, PrivacySettings
 
 
 def build_context():

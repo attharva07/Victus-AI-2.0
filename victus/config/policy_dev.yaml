@@ -1,0 +1,6 @@
+allowlist:
+  system: [open_app, net_snapshot, status]
+  openai: [draft]
+  docs: [create]
+  gmail: [send]
+denylist: [raw_shell, kernel_exec, firewall_modify]

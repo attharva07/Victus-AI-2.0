@@ -25,6 +25,10 @@ Input (text/voice)
 ```
 Failure at any stage stops the flow and returns a safe error.
 
+## Phase 1 Status
+- Baseline policy gate, executor, schemas, and audit logger are implemented and covered by unit flow tests.
+- `victus/app.py` wires Router → Planner → Policy → Executor → Audit so interfaces can call a single entry point (`VictusApp.run_request`).
+
 ## Safety Invariants (Non-Negotiable)
 - No admin/debug bypasses, hidden overrides, or generic shell execution.
 - Plugins never execute without a valid `policy_signature`.
@@ -72,3 +76,8 @@ Tests will cover policy allow/deny logic, plan schema validation, plugin argumen
 ## Execution Flow Diagram (Concise)
 - Input → Plan → Policy → Approval → Execute → Audit
 - Any failure halts execution; system fails closed.
+
+## Documentation
+- Developer workflow, schemas, and guardrails: [`docs/DEV_GUIDE.md`](docs/DEV_GUIDE.md)
+- Contribution rules and review checklist: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Policy invariants and gate rules: [`docs/POLICY.md`](docs/POLICY.md)

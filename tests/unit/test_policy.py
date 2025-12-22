@@ -1,6 +1,5 @@
-from datetime import datetime
-
 import pytest
+from datetime import datetime
 
 from victus.core.policy import PolicyEngine
 from victus.core.schemas import Context, Plan, PlanStep, PrivacySettings, StepIO, DataOutbound, PolicyError
@@ -47,6 +46,41 @@ def test_system_action_not_allowlisted_denied(base_context):
     engine = PolicyEngine()
     with pytest.raises(PolicyError):
         engine.evaluate(plan, base_context)
+
+
+def test_productivity_tools_blocked_in_system_plans(base_context):
+    plan = _plan_with_step(
+        PlanStep(id="step-1", tool="gmail", action="send"),
+        domain="system",
+    )
+    engine = PolicyEngine()
+    with pytest.raises(PolicyError):
+        engine.evaluate(plan, base_context)
+
+
+def test_system_tools_blocked_in_productivity_plans(base_context):
+    plan = _plan_with_step(
+        PlanStep(id="step-1", tool="system", action="open_app"),
+        domain="productivity",
+    )
+    engine = PolicyEngine()
+    with pytest.raises(PolicyError):
+        engine.evaluate(plan, base_context)
+
+
+def test_mixed_domain_permits_both_tool_sets(base_context):
+    plan = Plan(
+        goal="multi", 
+        domain="mixed",
+        steps=[
+            PlanStep(id="step-1", tool="system", action="open_app", args={"app": "notes"}),
+            PlanStep(id="step-2", tool="openai", action="draft", args={"prompt": "summarize"}),
+        ],
+        risk="low",
+    )
+    engine = PolicyEngine()
+    approval = engine.evaluate(plan, base_context)
+    assert approval.approved is True
 
 
 def test_gmail_send_requires_confirmation(base_context):

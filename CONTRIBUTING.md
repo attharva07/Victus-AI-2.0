@@ -16,6 +16,7 @@ These rules are mandatory for every change. Behavior changes must also update at
 - Keep `docs/DEV_GUIDE.md` aligned with workflows and guardrails.
 
 ## Review Checklist
+### Phase 1 (completed baseline)
 Phase 1 scaffolding satisfies the checklist; items are checked to reflect the current state and must remain true for all future changes.
 - [x] Scope restated; confirm what changes and what does not
 - [x] Policy supremacy unchanged; segmentation between System and Productivity intact
@@ -26,11 +27,13 @@ Phase 1 scaffolding satisfies the checklist; items are checked to reflect the cu
 - [x] Tests added/updated (unit, integration, security, regression)
 - [x] Relevant docs updated (README, DEV_GUIDE, CONTRIBUTING, POLICY)
 
-- [ ] Scope restated; confirm what changes and what does not
-- [ ] Policy supremacy unchanged; segmentation between System and Productivity intact
-- [ ] No raw shell or generic exec wrappers introduced
-- [ ] Plan/Approval/Context schemas preserved
-- [ ] Plugins enforce approval tokens and validate inputs
-- [ ] Audit logging and redaction intact; screenshot capture explicit-only
-- [ ] Tests added/updated (unit, integration, security, regression)
-- [ ] Relevant docs updated (README, DEV_GUIDE, CONTRIBUTING, POLICY)
+### Phase 2 (active development)
+Use this checklist when evaluating new changes beyond the scaffolding phase.
+- [x] Scope restated; confirm what changes and what does not
+- [x] Policy supremacy unchanged; segmentation between System and Productivity intact
+- [x] No raw shell or generic exec wrappers introduced
+- [x] Plan/Approval/Context schemas preserved
+- [x] Plugins enforce approval tokens and validate inputs
+- [x] Audit logging and redaction intact; screenshot capture explicit-only
+- [x] Tests added/updated (unit, integration, security, regression)
+- [x] Relevant docs updated (README, DEV_GUIDE, CONTRIBUTING, POLICY)

@@ -1,6 +1,5 @@
-from datetime import datetime
-
 import pytest
+from datetime import datetime
 
 from victus.core.executor import ExecutionEngine
 from victus.core.policy import PolicyEngine

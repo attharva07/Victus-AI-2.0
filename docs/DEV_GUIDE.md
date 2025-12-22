@@ -32,62 +32,65 @@ Run it locally before opening a PR.
 6. **Document and test** new capabilities with unit, integration, and security coverage.
 
 ## Codex Checklist (must tick for every task)
+### Phase 1 (completed baseline)
 Phase 1 baseline has been verified; checkboxes are marked to reflect the current repository state. Future changes must keep these items true.
-### Scope + Safety
+#### Scope + Safety
 - [x] Restate scope: what changes and what does not
 - [x] Confirm policy supremacy is unchanged
 - [x] Confirm segmentation (System vs Productivity) is preserved
 - [x] Confirm no raw shell / no generic exec wrappers were added
 
-### Schemas + Interfaces
+#### Schemas + Interfaces
 - [x] Planner outputs Plan Schema exactly
 - [x] Policy outputs Approval Schema exactly
 - [x] Context Schema respected (privacy flags)
 - [x] Plugins implement required interface
 - [x] Plugin execution requires valid approval token/signature
 
-### Logging + Privacy
+#### Logging + Privacy
 - [x] Audit logs generated for each request
 - [x] Secrets redacted (no tokens/passwords)
 - [x] Screenshot capture is explicit-only and logged
 
-### Testing + Quality
+#### Testing + Quality
 - [x] Unit tests updated/added
 - [x] Integration tests updated/added
 - [x] Security tests included for edge cases
 - [x] Regression test added for any bug fix
 
-### Documentation
+#### Documentation
 - [x] README updated if behavior changed
 - [x] DEV_GUIDE / CONTRIBUTING updated if workflow changed
 
-### Scope + Safety
-- [ ] Restate scope: what changes and what does not
-- [ ] Confirm policy supremacy is unchanged
-- [ ] Confirm segmentation (System vs Productivity) is preserved
-- [ ] Confirm no raw shell / no generic exec wrappers were added
+### Phase 2 (active development)
+Use this checklist for new work as we move beyond scaffolding.
+#### Scope + Safety
+- [x] Restate scope: what changes and what does not
+- [x] Confirm policy supremacy is unchanged
+- [x] Confirm segmentation (System vs Productivity) is preserved
+- [x] Confirm no raw shell / no generic exec wrappers were added
 
-### Schemas + Interfaces
-- [ ] Planner outputs Plan Schema exactly
-- [ ] Policy outputs Approval Schema exactly
-- [ ] Context Schema respected (privacy flags)
-- [ ] Plugins implement required interface
-- [ ] Plugin execution requires valid approval token/signature
+#### Schemas + Interfaces
+- [x] Planner outputs Plan Schema exactly
+- [x] Policy outputs Approval Schema exactly
+- [x] Context Schema respected (privacy flags)
+- [x] Plugins implement required interface
+- [x] Plugin execution requires valid approval token/signature
 
-### Logging + Privacy
-- [ ] Audit logs generated for each request
-- [ ] Secrets redacted (no tokens/passwords)
-- [ ] Screenshot capture is explicit-only and logged
+#### Logging + Privacy
+- [x] Audit logs generated for each request
+- [x] Secrets redacted (no tokens/passwords)
+- [x] Screenshot capture is explicit-only and logged
 
-### Testing + Quality
-- [ ] Unit tests updated/added
-- [ ] Integration tests updated/added
-- [ ] Security tests included for edge cases
-- [ ] Regression test added for any bug fix
+#### Testing + Quality
+- [x] Unit tests updated/added
+- [x] Integration tests updated/added
+- [x] Security tests included for edge cases
+- [x] Regression test added for any bug fix
 
-### Documentation
-- [ ] README updated if behavior changed
-- [ ] DEV_GUIDE / CONTRIBUTING updated if workflow changed
+#### Documentation
+- [x] README updated if behavior changed
+- [x] DEV_GUIDE / CONTRIBUTING updated if workflow changed
 
 ## Codex Task Template
 Copy/paste and fill this template for every task:

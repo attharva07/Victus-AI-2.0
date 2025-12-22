@@ -33,12 +33,20 @@ Failure at any stage stops the flow and returns a safe error.
 - Screenshots happen only when explicitly requested by a plan step and are never stored without permission.
 
 ## High-Level Module Layout
+While implementation is in-progress, the architecture is fixed and reflected in the codebase:
+- **Planner/Router:** Parses user input (text/voice) and emits a Plan object (schema defined in `victus/schemas.py`).
+- **Policy Engine (`victus/policy.py`):** Validates schema, allowlists/denylists, risk, confirmation, and data boundaries; returns Approval objects.
+- **Execution Engine (`victus/executor.py`):** Enforces approvals and constraints, dispatching only approved steps to plugins and refusing to run without a signed policy signature.
+- **Plugins (`victus/plugins/base.py`):** Implement `capabilities`, `validate_args`, and `execute` for allowlisted actions in domains such as `system`, `spotify`, `gmail`, `openai`, and `docs`.
+- **Audit Logger (`victus/audit.py`):** Records input, plan, approval, executed steps, and results with secret redaction.
+
 While implementation is in-progress, the architecture is fixed:
 - **Planner/Router:** Parses user input (text/voice) and emits a Plan object.
 - **Policy Engine:** Validates schema, allowlists/denylists, risk, confirmation, and data boundaries; returns Approval objects.
 - **Execution Engine:** Enforces approvals and constraints, dispatching only approved steps to plugins.
 - **Plugins:** Implement `capabilities`, `validate_args`, and `execute` for allowlisted actions in domains such as `system`, `spotify`, `gmail`, `openai`, and `docs`.
 - **Audit Logger:** Records input, plan, approval, executed steps, and results with secret redaction.
+
 - **Configs:** Dev/prod policy files (e.g., `policy_dev.yaml`, `policy_prod.yaml`) that never bypass enforcement.
 
 ## Policies: Dev vs Prod

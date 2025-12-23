@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from typing import Dict, Iterable, Optional, Set
+import hashlib
+import json
+from dataclasses import asdict
+from typing import Dict, Iterable, List, Optional, Set
 
 from .schemas import Approval, ApprovalConstraints, Context, Plan, PlanStep, PolicyError
 
@@ -10,7 +13,7 @@ class PolicyEngine:
         self,
         allowlist: Optional[Dict[str, Set[str]]] = None,
         denylist: Optional[Iterable[str]] = None,
-        signature: str = "signed-policy",
+        signature_secret: str = "signed-policy",
     ) -> None:
         self.allowlist = allowlist or {
             "system": {"open_app", "net_snapshot"},
@@ -27,7 +30,7 @@ class PolicyEngine:
             "docs": "productivity",
         }
         self.denylist: Set[str] = set(denylist or {"raw_shell", "kernel_exec", "firewall_modify"})
-        self.signature = signature
+        self.signature_secret = signature_secret
 
     def evaluate(self, plan: Plan, context: Context) -> Approval:
         self.enforce_plan_domain(plan)
@@ -42,12 +45,21 @@ class PolicyEngine:
             redact_before_openai=plan.data_outbound.redaction_required,
         )
 
+        approved_steps: List[str] = [step.id for step in plan.steps]
+        signature = compute_policy_signature(
+            plan=plan,
+            approved_steps=approved_steps,
+            constraints=constraints,
+            requires_confirmation=requires_confirmation,
+            secret=self.signature_secret,
+        )
+
         return Approval(
             approved=True,
-            approved_steps=[step.id for step in plan.steps],
+            approved_steps=approved_steps,
             requires_confirmation=requires_confirmation,
             constraints=constraints,
-            policy_signature=self.signature,
+            policy_signature=signature,
         )
 
     def _enforce_plan_rules(self, plan: Plan, context: Context) -> None:
@@ -96,3 +108,40 @@ class PolicyEngine:
                 raise PolicyError("Productivity tool used inside a system-only plan")
             if plan.domain == "productivity" and tool_domain != "productivity":
                 raise PolicyError("System tool used inside a productivity-only plan")
+
+
+def compute_policy_signature(
+    plan: Plan,
+    approved_steps: List[str],
+    constraints: ApprovalConstraints,
+    requires_confirmation: bool,
+    secret: str,
+) -> str:
+    """Generate a deterministic signature bound to the plan and approval details."""
+
+    payload = {
+        "plan": {
+            "goal": plan.goal,
+            "domain": plan.domain,
+            "risk": plan.risk,
+            "requires_confirmation": plan.requires_confirmation,
+            "data_outbound": asdict(plan.data_outbound),
+            "steps": [
+                {
+                    "id": step.id,
+                    "tool": step.tool,
+                    "action": step.action,
+                    "args": step.args,
+                    "inputs": asdict(step.inputs),
+                    "outputs": asdict(step.outputs),
+                }
+                for step in plan.steps
+            ],
+        },
+        "approved_steps": approved_steps,
+        "approval_requires_confirmation": requires_confirmation,
+        "constraints": asdict(constraints),
+        "secret": secret,
+    }
+    serialized = json.dumps(payload, sort_keys=True)
+    return hashlib.sha256(serialized.encode()).hexdigest()

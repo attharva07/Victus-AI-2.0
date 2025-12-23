@@ -30,7 +30,7 @@ class VictusApp:
         self.router = Router()
         self.planner = Planner()
         self.policy_engine = policy_engine or PolicyEngine()
-        self.executor = ExecutionEngine(plugins)
+        self.executor = ExecutionEngine(plugins, signature_secret=self.policy_engine.signature_secret)
         self.audit = audit_logger or AuditLogger()
 
     def build_plan(self, goal: str, domain: str, steps: Sequence[PlanStep], **kwargs) -> Plan:

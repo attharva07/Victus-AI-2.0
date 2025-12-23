@@ -72,3 +72,23 @@ def test_executor_enforces_plugin_validation():
     engine = ExecutionEngine({"system": SystemPlugin()})
     with pytest.raises(ExecutionError):
         engine.execute(bad_plan, approval)
+
+
+def test_executor_rejects_mutated_approved_steps_signature():
+    plan = build_plan()
+    context = build_context()
+    approval = PolicyEngine().evaluate(plan, context)
+    approval.approved_steps.append("step-2")
+    engine = ExecutionEngine({"system": SystemPlugin()})
+    with pytest.raises(ExecutionError):
+        engine.execute(plan, approval)
+
+
+def test_executor_rejects_tampered_signature():
+    plan = build_plan()
+    context = build_context()
+    approval = PolicyEngine().evaluate(plan, context)
+    approval.policy_signature = approval.policy_signature + "tamper"
+    engine = ExecutionEngine({"system": SystemPlugin()})
+    with pytest.raises(ExecutionError):
+        engine.execute(plan, approval)

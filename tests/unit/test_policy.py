@@ -79,7 +79,14 @@ def test_mixed_domain_permits_both_tool_sets(base_context):
         risk="low",
     )
     engine = PolicyEngine()
-    approval = engine.evaluate(plan, base_context)
+    context = Context(
+        session_id=base_context.session_id,
+        timestamp=base_context.timestamp,
+        mode=base_context.mode,
+        foreground_app=base_context.foreground_app,
+        privacy=PrivacySettings(allow_send_to_openai=True),
+    )
+    approval = engine.evaluate(plan, context)
     assert approval.approved is True
 
 
@@ -104,11 +111,34 @@ def test_mixed_plan_denied_when_privacy_blocks_screenshot_and_openai(base_contex
         engine.evaluate(plan, base_context)
 
 
+def test_mixed_plan_rejected_when_privacy_flags_false(base_context):
+    plan = Plan(
+        goal="openai without consent",
+        domain="mixed",
+        steps=[PlanStep(id="step-1", tool="openai", action="draft", args={"prompt": "summarize"})],
+        data_outbound=DataOutbound(to_openai=True),
+    )
+    engine = PolicyEngine()
+    with pytest.raises(PolicyError):
+        engine.evaluate(plan, base_context)
+
+
 def test_mixed_plan_denies_productivity_action_masquerading_as_system(base_context):
     plan = Plan(
         goal="misrouted action",
         domain="mixed",
         steps=[PlanStep(id="step-1", tool="docs", action="open_app", args={"app": "terminal"})],
+    )
+    engine = PolicyEngine()
+    with pytest.raises(PolicyError):
+        engine.evaluate(plan, base_context)
+
+
+def test_productivity_plan_rejects_system_execution_attempt(base_context):
+    plan = Plan(
+        goal="productivity cannot execute system",
+        domain="productivity",
+        steps=[PlanStep(id="step-1", tool="system", action="net_snapshot", args={"detail": "summary"})],
     )
     engine = PolicyEngine()
     with pytest.raises(PolicyError):

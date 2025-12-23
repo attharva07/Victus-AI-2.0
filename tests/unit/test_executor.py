@@ -92,3 +92,20 @@ def test_executor_rejects_tampered_signature():
     engine = ExecutionEngine({"system": SystemPlugin()})
     with pytest.raises(ExecutionError):
         engine.execute(plan, approval)
+
+
+def test_executor_rejects_approval_reused_for_different_plan():
+    original_plan = build_plan()
+    context = build_context()
+    approval = PolicyEngine().evaluate(original_plan, context)
+
+    mutated_plan = Plan(
+        goal="play music differently",
+        domain="system",
+        steps=[PlanStep(id="step-2", tool="system", action="open_app", args={"app": "notes"})],
+        risk="low",
+    )
+
+    engine = ExecutionEngine({"system": SystemPlugin()})
+    with pytest.raises(ExecutionError):
+        engine.execute(mutated_plan, approval)

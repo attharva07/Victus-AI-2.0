@@ -1,9 +1,17 @@
 import pytest
 from datetime import datetime
 
+from victus.app import VictusApp
 from victus.core.executor import ExecutionEngine
-from victus.core.policy import PolicyEngine
-from victus.core.schemas import Context, Plan, PlanStep, PrivacySettings, ExecutionError
+from victus.core.policy import PolicyEngine, compute_policy_signature
+from victus.core.schemas import (
+    Context,
+    DataOutbound,
+    ExecutionError,
+    Plan,
+    PlanStep,
+    PrivacySettings,
+)
 from victus.domains.system.system_plugin import SystemPlugin
 
 
@@ -23,6 +31,32 @@ def build_context(allow_screenshot=True):
         mode="dev",
         foreground_app=None,
         privacy=PrivacySettings(allow_screenshot=allow_screenshot),
+    )
+
+
+def build_openai_plan():
+    return Plan(
+        goal="draft",
+        domain="productivity",
+        steps=[
+            PlanStep(
+                id="step-1",
+                tool="openai",
+                action="draft",
+                args={"prompt": "secret", "to": "user@example.com"},
+            )
+        ],
+        data_outbound=DataOutbound(to_openai=True),
+    )
+
+
+def build_openai_context():
+    return Context(
+        session_id="openai-session",
+        timestamp=datetime.utcnow(),
+        mode="dev",
+        foreground_app=None,
+        privacy=PrivacySettings(allow_send_to_openai=True),
     )
 
 
@@ -109,3 +143,37 @@ def test_executor_rejects_approval_reused_for_different_plan():
     engine = ExecutionEngine({"system": SystemPlugin()})
     with pytest.raises(ExecutionError):
         engine.execute(mutated_plan, approval)
+
+
+def test_policy_signature_uses_redacted_payload():
+    app = VictusApp(plugins={})
+    raw_plan = build_openai_plan()
+    context = build_openai_context()
+
+    prepared_plan, approval = app.request_approval(raw_plan, context)
+
+    redacted_args = prepared_plan.steps[0].args
+    assert redacted_args["prompt"] == "[REDACTED]"
+    assert redacted_args["to"] == "redacted@example.com"
+
+    expected_signature = compute_policy_signature(
+        plan=prepared_plan,
+        approved_steps=approval.approved_steps,
+        constraints=approval.constraints,
+        requires_confirmation=approval.requires_confirmation,
+        secret=app.policy_engine.signature_secret,
+    )
+
+    assert approval.policy_signature == expected_signature
+
+
+def test_executor_rejects_raw_payload_after_redacted_approval():
+    app = VictusApp(plugins={})
+    raw_plan = build_openai_plan()
+    context = build_openai_context()
+
+    _, approval = app.request_approval(raw_plan, context)
+
+    with pytest.raises(ExecutionError):
+        app.executor.execute(raw_plan, approval)
+

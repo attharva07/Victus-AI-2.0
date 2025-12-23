@@ -39,10 +39,18 @@ class VictusApp:
 
         return self.planner.build_plan(goal=goal, domain=domain, steps=steps, **kwargs)
 
-    def request_approval(self, plan: Plan, context: Context) -> Approval:
-        """Issue a policy approval for the provided plan/context."""
+    def prepare_plan_for_policy(self, plan: Plan) -> Plan:
+        """Mark outbound flows and redact sensitive arguments before policy review."""
 
-        return issue_approval(plan, context, self.policy_engine)
+        marked_plan = self._mark_openai_outbound(plan)
+        return self._redact_openai_steps(marked_plan)
+
+    def request_approval(self, plan: Plan, context: Context) -> tuple[Plan, Approval]:
+        """Prepare and submit a plan for approval, returning the redacted copy."""
+
+        prepared_plan = self.prepare_plan_for_policy(plan)
+        approval = issue_approval(prepared_plan, context, self.policy_engine)
+        return prepared_plan, approval
 
     def execute_plan(self, plan: Plan, approval: Approval) -> Dict[str, object]:
         """Execute an approved plan via the execution engine."""
@@ -57,6 +65,12 @@ class VictusApp:
 
         routed = self.router.route(user_input, context)
         plan = self.build_plan(goal=user_input, domain=domain, steps=steps)
+        prepared_plan, approval = self.request_approval(plan, routed.context)
+        results = self.execute_plan(prepared_plan, approval)
+        self.audit.log_request(
+            user_input=user_input,
+            plan=prepared_plan,
+
         plan = self._mark_openai_outbound(plan)
         redacted_plan = self._redact_openai_steps(plan)
         approval = self.request_approval(redacted_plan, routed.context)

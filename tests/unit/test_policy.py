@@ -70,7 +70,7 @@ def test_system_tools_blocked_in_productivity_plans(base_context):
 
 def test_mixed_domain_permits_both_tool_sets(base_context):
     plan = Plan(
-        goal="multi", 
+        goal="multi",
         domain="mixed",
         steps=[
             PlanStep(id="step-1", tool="system", action="open_app", args={"app": "notes"}),
@@ -81,6 +81,38 @@ def test_mixed_domain_permits_both_tool_sets(base_context):
     engine = PolicyEngine()
     approval = engine.evaluate(plan, base_context)
     assert approval.approved is True
+
+
+def test_mixed_plan_denied_when_privacy_blocks_screenshot_and_openai(base_context):
+    plan = Plan(
+        goal="sensitive mix",
+        domain="mixed",
+        steps=[
+            PlanStep(
+                id="step-1",
+                tool="system",
+                action="open_app",
+                args={"app": "browser"},
+                inputs=StepIO(uses_screenshot=True),
+            ),
+            PlanStep(id="step-2", tool="openai", action="draft", args={"prompt": "summarize"}),
+        ],
+        data_outbound=DataOutbound(to_openai=True),
+    )
+    engine = PolicyEngine()
+    with pytest.raises(PolicyError):
+        engine.evaluate(plan, base_context)
+
+
+def test_mixed_plan_denies_productivity_action_masquerading_as_system(base_context):
+    plan = Plan(
+        goal="misrouted action",
+        domain="mixed",
+        steps=[PlanStep(id="step-1", tool="docs", action="open_app", args={"app": "terminal"})],
+    )
+    engine = PolicyEngine()
+    with pytest.raises(PolicyError):
+        engine.evaluate(plan, base_context)
 
 
 def test_gmail_send_requires_confirmation(base_context):

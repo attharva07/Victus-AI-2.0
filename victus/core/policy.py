@@ -19,7 +19,7 @@ class PolicyEngine:
             "system": {"open_app", "net_snapshot"},
             "spotify": {"play"},
             "gmail": {"send"},
-            "openai": {"draft"},
+            "openai": {"draft", "draft_email", "summarize_text"},
             "docs": {"create"},
         }
         self.tool_domains: Dict[str, str] = {
@@ -63,7 +63,8 @@ class PolicyEngine:
         )
 
     def _enforce_plan_rules(self, plan: Plan, context: Context) -> None:
-        if plan.data_outbound.to_openai and not context.privacy.allow_send_to_openai:
+        requires_openai_opt_in = plan.data_outbound.to_openai or any(step.tool == "openai" for step in plan.steps)
+        if requires_openai_opt_in and not context.privacy.allow_send_to_openai:
             raise PolicyError("Outbound data to OpenAI not permitted by privacy settings")
 
         for step in plan.steps:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from .sanitization import sanitize_plan
 from .schemas import Approval, Plan
 
 
@@ -30,9 +31,10 @@ class AuditLogger:
         secrets: Optional[List[str]] = None,
     ) -> AuditRecord:
         redacted = ["[REDACTED]" for _ in secrets or []]
+        sanitized_plan = sanitize_plan(plan)
         record = AuditRecord(
             user_input=user_input,
-            plan=plan,
+            plan=sanitized_plan,
             approval=approval,
             results=results,
             errors=errors,

@@ -4,6 +4,7 @@ from typing import Any, Dict
 
 from ..base import BasePlugin
 from ...core.schemas import Approval, ExecutionError
+from .plugins.openai_client import OpenAIClientPlugin
 
 
 class GmailPlugin(BasePlugin):
@@ -58,17 +59,5 @@ class DocsPlugin(BasePlugin):
         return {"action": action, "doc_id": f"doc-{args.get('title')}"}
 
 
-class OpenAIPlugin(BasePlugin):
-    def capabilities(self) -> Dict[str, Dict[str, Any]]:
-        return {"draft": {"prompt": "text"}}
-
-    def validate_args(self, action: str, args: Dict[str, Any]) -> None:
-        if action != "draft":
-            raise ExecutionError("Unknown openai action requested")
-        if not isinstance(args.get("prompt"), str) or not args["prompt"].strip():
-            raise ExecutionError("openai.draft requires a prompt string")
-
-    def execute(self, action: str, args: Dict[str, Any], approval: Approval) -> Dict[str, Any]:
-        if not approval.policy_signature:
-            raise ExecutionError("Missing policy signature")
-        return {"action": action, "draft": f"draft for: {args.get('prompt')}"}
+class OpenAIPlugin(OpenAIClientPlugin):
+    """Backward-compatible alias for the OpenAI client plugin."""

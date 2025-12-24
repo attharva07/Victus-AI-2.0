@@ -32,6 +32,10 @@ class ExecutionEngine:
         for step in plan.steps:
             if step.id not in approval.approved_steps:
                 raise ExecutionError(f"Step {step.id} is not approved for execution")
+            if plan.domain == "productivity" and step.tool == "system":
+                raise ExecutionError("Productivity domain cannot execute system actions")
+            if plan.domain == "system" and step.tool != "system":
+                raise ExecutionError("System domain cannot execute non-system actions")
             plugin = self._get_plugin(step.tool)
             plugin.validate_args(step.action, step.args)
             results[step.id] = plugin.execute(step.action, step.args, approval)

@@ -19,7 +19,7 @@ class PolicyEngine:
             "system": {"open_app", "net_snapshot"},
             "spotify": {"play"},
             "gmail": {"send"},
-            "openai": {"draft", "draft_email", "summarize_text"},
+            "openai": {"draft", "generate_text", "draft_email", "summarize", "summarize_text", "outline"},
             "docs": {"create"},
         }
         self.tool_domains: Dict[str, str] = {

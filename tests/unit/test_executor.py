@@ -44,7 +44,7 @@ def build_openai_plan():
             PlanStep(
                 id="step-1",
                 tool="openai",
-                action="draft",
+                action="generate_text",
                 args={"prompt": "secret", "to": "user@example.com"},
             )
         ],

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -131,7 +131,7 @@ class PopupWindow(QWidget):
         self.input_box.setFocus()
 
     def eventFilter(self, source, event):  # type: ignore[override]
-        if source is self.input_box and event.type() == event.KeyPress:
+        if source is self.input_box and event.type() == QEvent.KeyPress:
             if event.key() in {Qt.Key_Return, Qt.Key_Enter}:
                 if event.modifiers() & Qt.ShiftModifier:
                     return False
@@ -143,7 +143,7 @@ class PopupWindow(QWidget):
             if event.key() == Qt.Key_L and event.modifiers() & Qt.ControlModifier:
                 self.input_box.clear()
                 return True
-        if event.type() == event.KeyPress and event.key() == Qt.Key_Escape:
+        if event.type() == QEvent.KeyPress and event.key() == Qt.Key_Escape:
             self.hide()
             return True
         return super().eventFilter(source, event)

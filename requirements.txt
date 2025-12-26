@@ -1,2 +1,3 @@
 pytest
 PySide6
+python-dotenv

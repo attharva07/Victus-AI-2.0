@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import os
 from typing import Dict, List
 
 from openai import OpenAI
 
+from ....config.runtime import get_openai_api_key, require_openai_api_key
 from ....core.schemas import ExecutionError
 
 
@@ -12,9 +12,9 @@ class OpenAIClientReal:
     """Real OpenAI client that mirrors the stub output format."""
 
     def __init__(self, api_key: str | None = None) -> None:
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.api_key = api_key or get_openai_api_key()
         if not self.api_key:
-            raise ExecutionError("OPENAI_API_KEY is required to use the OpenAI client.")
+            self.api_key = require_openai_api_key()
 
         self.client = OpenAI(api_key=self.api_key)
 

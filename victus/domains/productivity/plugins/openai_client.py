@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, List, Optional
 
 from ...base import BasePlugin
@@ -24,7 +25,16 @@ class OpenAIClientPlugin(BasePlugin):
     """Stub OpenAI client that drafts or summarizes text when approved."""
 
     def __init__(self, client: Optional[Any] = None) -> None:
-        self.client = client or OpenAIClientStub()
+        if client is not None:
+            self.client = client
+            return
+
+        if os.getenv("OPENAI_API_KEY"):
+            from .openai_real_client import OpenAIClientReal
+
+            self.client = OpenAIClientReal()
+        else:
+            self.client = OpenAIClientStub()
 
     def capabilities(self) -> Dict[str, Dict[str, Any]]:
         return {

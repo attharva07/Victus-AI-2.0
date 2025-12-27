@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Callable
+from html import escape
+from typing import Callable, Optional
 
 from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QFont
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
 
 class PopupWindow(QWidget):
     submit = Signal(str)
+    stop_requested = Signal()
 
     def __init__(self, on_submit: Callable[[str], None]) -> None:
         super().__init__()
@@ -26,6 +28,10 @@ class PopupWindow(QWidget):
         self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.resize(600, 480)
+
+        self._streaming_speaker: Optional[str] = None
+        self._streaming_content = ""
+        self._streaming_base_html = ""
 
         self._build_ui()
         self.submit.connect(on_submit)
@@ -63,6 +69,21 @@ class PopupWindow(QWidget):
                 background-color: #2a2a2a;
                 border-radius: 6px;
             }
+            QPushButton#stopButton {
+                color: #ffffff;
+                background-color: #3a3a3a;
+                border: 1px solid #2d2d2d;
+                border-radius: 6px;
+                padding: 6px 10px;
+            }
+            QPushButton#stopButton:disabled {
+                color: #777777;
+                background-color: #252525;
+                border-color: #252525;
+            }
+            QPushButton#stopButton:hover:!disabled {
+                background-color: #444444;
+            }
             QTextEdit#transcript {
                 background-color: #1b1b1b;
                 color: #f5f5f5;
@@ -98,6 +119,12 @@ class PopupWindow(QWidget):
         self.status = QLabel("Ready")
         self.status.setObjectName("status")
         header.addWidget(self.status)
+
+        self.stop_btn = QPushButton("Stop")
+        self.stop_btn.setObjectName("stopButton")
+        self.stop_btn.setEnabled(False)
+        self.stop_btn.clicked.connect(self.stop_requested.emit)
+        header.addWidget(self.stop_btn)
 
         close_btn = QPushButton("✕")
         close_btn.setObjectName("closeButton")
@@ -163,11 +190,12 @@ class PopupWindow(QWidget):
 
     def _append_message(self, speaker: str, text: str) -> None:
         existing = self.transcript.toHtml()
-        message_block = f"<b style='color:#9cdcfe'>{speaker}:</b> <span style='color:#e5e5e5'>{text}</span>"
+        message_block = f"<b style='color:#9cdcfe'>{speaker}:</b> <span style='color:#e5e5e5'>{escape(text)}</span>"
         if existing:
             updated = existing + "<br/>" + message_block
         else:
             updated = message_block
+        self._streaming_base_html = ""
         self.transcript.setHtml(updated)
         self.transcript.verticalScrollBar().setValue(self.transcript.verticalScrollBar().maximum())
 
@@ -189,3 +217,36 @@ class PopupWindow(QWidget):
 
     def set_error(self) -> None:
         self._set_status("Error", "#8c2f39")
+
+    def begin_stream_message(self, speaker: str) -> None:
+        self._streaming_speaker = speaker
+        self._streaming_content = ""
+        self._streaming_base_html = self.transcript.toHtml()
+        self.stop_btn.setEnabled(True)
+        self._render_stream_message()
+
+    def append_stream_chunk(self, text: str) -> None:
+        if not self._streaming_speaker:
+            self.append_victus_message(text)
+            return
+        safe_text = escape(text).replace("\n", "<br/>")
+        self._streaming_content += safe_text
+        self._render_stream_message()
+
+    def end_stream_message(self) -> None:
+        self._streaming_speaker = None
+        self._streaming_content = ""
+        self._streaming_base_html = ""
+        self.stop_btn.setEnabled(False)
+
+    def _render_stream_message(self) -> None:
+        if not self._streaming_speaker:
+            return
+        base = self._streaming_base_html
+        stream_block = (
+            f"<b style='color:#9cdcfe'>{self._streaming_speaker}:</b> "
+            f"<span style='color:#e5e5e5'>{self._streaming_content}</span>"
+        )
+        updated = stream_block if not base else base + "<br/>" + stream_block
+        self.transcript.setHtml(updated)
+        self.transcript.verticalScrollBar().setValue(self.transcript.verticalScrollBar().maximum())

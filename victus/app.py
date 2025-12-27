@@ -9,7 +9,7 @@ Approval -> Execute -> Audit. Real interfaces (UI/voice/hotkey) will call into
 """
 
 from dataclasses import replace
-from typing import Dict, Sequence
+from typing import Callable, Dict, Sequence
 
 from .core.approval import issue_approval
 from .core.audit import AuditLogger
@@ -58,6 +58,23 @@ class VictusApp:
 
         return self.executor.execute(plan, approval)
 
+    def execute_plan_streaming(
+        self,
+        plan: Plan,
+        approval: Approval,
+        *,
+        stream_callbacks: Dict[str, Callable[[str], None]] | None = None,
+        stop_requests: Dict[str, Callable[[], bool]] | None = None,
+    ) -> Dict[str, object]:
+        """Execute a plan while streaming results to provided callbacks."""
+
+        return self.executor.execute_streaming(
+            plan,
+            approval,
+            stream_callbacks=stream_callbacks,
+            stop_requests=stop_requests,
+        )
+
     def run_request(self, user_input: str, context: Context, domain: str, steps: Sequence[PlanStep]) -> Dict[str, object]:
         """Run the full request lifecycle and record an audit entry.
 
@@ -68,6 +85,41 @@ class VictusApp:
         plan = self.build_plan(goal=user_input, domain=domain, steps=steps)
         prepared_plan, approval = self.request_approval(plan, routed.context)
         results = self.execute_plan(prepared_plan, approval)
+        self.audit.log_request(
+            user_input=user_input,
+            plan=prepared_plan,
+            approval=approval,
+            results=results,
+            errors=None,
+        )
+        return results
+
+    def run_request_streaming(
+        self,
+        user_input: str,
+        context: Context,
+        domain: str,
+        steps: Sequence[PlanStep],
+        *,
+        stream_callbacks: Dict[str, Callable[[str], None]] | None = None,
+        stop_requests: Dict[str, Callable[[], bool]] | None = None,
+    ) -> Dict[str, object]:
+        """Run the request lifecycle while streaming step outputs.
+
+        This mirrors ``run_request`` but dispatches steps through
+        ``execute_plan_streaming`` so that UI callers can append output
+        incrementally without blocking the main thread.
+        """
+
+        routed = self.router.route(user_input, context)
+        plan = self.build_plan(goal=user_input, domain=domain, steps=steps)
+        prepared_plan, approval = self.request_approval(plan, routed.context)
+        results = self.execute_plan_streaming(
+            prepared_plan,
+            approval,
+            stream_callbacks=stream_callbacks,
+            stop_requests=stop_requests,
+        )
         self.audit.log_request(
             user_input=user_input,
             plan=prepared_plan,

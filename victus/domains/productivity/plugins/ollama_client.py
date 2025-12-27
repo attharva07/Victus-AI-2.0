@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Dict, List
+import json
+from typing import Callable, Dict, List, Optional
 
 import requests
 
@@ -16,11 +17,24 @@ class OllamaClient(LLMClientBase):
         self.base_url = (base_url or get_ollama_base_url()).rstrip("/")
         self.model = model or get_ollama_model()
 
-    def _post_prompt(self, prompt: str) -> str:
+    def _stream_prompt(
+        self,
+        prompt: str,
+        *,
+        on_chunk: Optional[Callable[[str], None]] = None,
+        should_stop: Optional[Callable[[], bool]] = None,
+    ) -> str:
         url = f"{self.base_url}/api/generate"
-        payload = {"model": self.model, "prompt": prompt, "stream": False}
+        payload = {"model": self.model, "prompt": prompt, "stream": True}
+        chunks: list[str] = []
+        callback = on_chunk or (lambda chunk: None)
         try:
-            response = requests.post(url, json=payload, timeout=30)
+            response = requests.post(
+                url,
+                json=payload,
+                stream=True,
+                timeout=(10, None),
+            )
         except requests.RequestException as exc:  # pragma: no cover - network dependency
             raise ExecutionError(f"Ollama request failed: {exc}") from exc
 
@@ -30,15 +44,42 @@ class OllamaClient(LLMClientBase):
             )
 
         try:
-            data = response.json()
-        except ValueError as exc:  # pragma: no cover - unexpected server response
-            raise ExecutionError("Ollama response was not valid JSON") from exc
+            for line in response.iter_lines(decode_unicode=True):
+                if should_stop and should_stop():
+                    response.close()
+                    break
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                except ValueError:
+                    continue
+                chunk = data.get("response", "") if isinstance(data, dict) else ""
+                if chunk:
+                    chunks.append(chunk)
+                    callback(chunk)
+        except requests.RequestException as exc:  # pragma: no cover - network dependency
+            raise ExecutionError(f"Streaming from Ollama failed: {exc}") from exc
+        finally:
+            response.close()
 
-        return data.get("response", "") if isinstance(data, dict) else ""
+        return "".join(chunks)
+
+    def _post_prompt(self, prompt: str) -> str:
+        return self._stream_prompt(prompt)
 
     def generate_text(self, *, prompt: str) -> Dict[str, str]:
         content = self._post_prompt(prompt)
         return {"action": "generate_text", "content": content}
+
+    def stream_generate_text(
+        self,
+        *,
+        prompt: str,
+        on_chunk: Optional[Callable[[str], None]] = None,
+        should_stop: Optional[Callable[[], bool]] = None,
+    ) -> str:
+        return self._stream_prompt(prompt, on_chunk=on_chunk, should_stop=should_stop)
 
     def summarize(self, *, text: str) -> Dict[str, str]:
         summary = self._post_prompt(text)

@@ -5,6 +5,7 @@ import json
 from dataclasses import asdict
 from typing import Dict, Iterable, List, Optional, Set
 
+from ..config.runtime import get_llm_provider, is_outbound_llm_provider
 from .schemas import Approval, ApprovalConstraints, Context, Plan, PlanStep, PolicyError
 
 
@@ -63,7 +64,10 @@ class PolicyEngine:
         )
 
     def _enforce_plan_rules(self, plan: Plan, context: Context) -> None:
-        requires_openai_opt_in = plan.data_outbound.to_openai or any(step.tool == "openai" for step in plan.steps)
+        provider = get_llm_provider()
+        requires_openai_opt_in = is_outbound_llm_provider(provider) and (
+            plan.data_outbound.to_openai or any(step.tool == "openai" for step in plan.steps)
+        )
         if requires_openai_opt_in and not context.privacy.allow_send_to_openai:
             raise PolicyError("Outbound data to OpenAI not permitted by privacy settings")
 

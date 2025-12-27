@@ -5,6 +5,11 @@ from victus.core.policy import PolicyEngine
 from victus.core.schemas import Context, Plan, PlanStep, PrivacySettings, StepIO, DataOutbound, PolicyError
 
 
+@pytest.fixture(autouse=True)
+def use_openai_provider(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+
+
 @pytest.fixture
 def base_context():
     return Context(

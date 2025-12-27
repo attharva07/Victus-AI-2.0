@@ -17,6 +17,11 @@ from victus.domains.productivity.plugins.openai_client import OpenAIClientPlugin
 from victus.domains.system.system_plugin import SystemPlugin
 
 
+@pytest.fixture(autouse=True)
+def use_openai_provider(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+
+
 @pytest.fixture
 def openai_allowlist():
     return {

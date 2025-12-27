@@ -3,21 +3,26 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
+from ..config.runtime import get_llm_provider, is_outbound_llm_provider
 from .schemas import Plan
 
 
 def sanitize_plan(plan: Plan) -> Plan:
     """Return a copy of the plan with outbound flows marked and OpenAI args redacted."""
 
-    outbound_marked = _mark_openai_outbound(plan)
+    provider = get_llm_provider()
+    outbound_marked = _mark_openai_outbound(plan, provider)
     return _redact_openai_steps(outbound_marked)
 
 
-def _mark_openai_outbound(plan: Plan) -> Plan:
-    if not any(step.tool == "openai" for step in plan.steps):
-        return plan
+def _mark_openai_outbound(plan: Plan, provider: str) -> Plan:
+    is_outbound = is_outbound_llm_provider(provider)
+    to_openai = is_outbound and any(step.tool == "openai" for step in plan.steps)
+    redaction_required = is_outbound and plan.data_outbound.redaction_required
 
-    outbound = replace(plan.data_outbound, to_openai=True)
+    outbound = replace(
+        plan.data_outbound, to_openai=to_openai, redaction_required=redaction_required
+    )
     return replace(plan, data_outbound=outbound)
 
 

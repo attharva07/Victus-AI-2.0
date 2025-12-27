@@ -20,6 +20,7 @@ from .core.router import Router
 from .core.sanitization import sanitize_plan
 from .core.schemas import Approval, Context, Plan, PlanStep
 from .domains.base import BasePlugin
+from .config.runtime import get_llm_provider, is_outbound_llm_provider
 
 
 class VictusApp:
@@ -78,9 +79,14 @@ class VictusApp:
 
     @staticmethod
     def _mark_openai_outbound(plan: Plan) -> Plan:
-        if any(step.tool == "openai" for step in plan.steps):
-            plan.data_outbound.to_openai = True
-        return plan
+        provider = get_llm_provider()
+        is_outbound = is_outbound_llm_provider(provider)
+        outbound = replace(
+            plan.data_outbound,
+            to_openai=is_outbound and any(step.tool == "openai" for step in plan.steps),
+            redaction_required=is_outbound and plan.data_outbound.redaction_required,
+        )
+        return replace(plan, data_outbound=outbound)
 
     @staticmethod
     def _redact_value(key: str, value: object) -> object:

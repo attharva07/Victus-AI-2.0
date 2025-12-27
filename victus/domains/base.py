@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Callable, Dict, Optional
 
 from ..core.schemas import Approval, ExecutionError
 
@@ -16,6 +16,23 @@ class BasePlugin:
 
     def execute(self, action: str, args: Dict[str, Any], approval: Approval) -> Any:
         raise NotImplementedError
+
+    def stream_execute(
+        self,
+        action: str,
+        args: Dict[str, Any],
+        approval: Approval,
+        *,
+        on_chunk: Optional[Callable[[str], None]] = None,
+        should_stop: Optional[Callable[[], bool]] = None,
+    ) -> Any:
+        """Optional streaming variant of ``execute``.
+
+        Plugins that do not override this fall back to the synchronous
+        ``execute`` implementation.
+        """
+
+        return self.execute(action, args, approval)
 
 
 class DummyPlugin(BasePlugin):

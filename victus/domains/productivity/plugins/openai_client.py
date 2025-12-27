@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from ...base import BasePlugin
 from ....config.runtime import (
@@ -105,6 +105,36 @@ class OpenAIClientPlugin(BasePlugin):
         if action == "outline":
             return self.client.outline(topic=args.get("topic", ""))
         raise ExecutionError(f"Unknown openai action '{action}'")
+
+    def stream_execute(
+        self,
+        action: str,
+        args: Dict[str, Any],
+        approval: Approval,
+        *,
+        on_chunk: Optional[Callable[[str], None]] = None,
+        should_stop: Optional[Callable[[], bool]] = None,
+    ) -> Any:
+        if not approval.policy_signature:
+            raise ExecutionError("Missing policy signature")
+
+        if action in {"draft", "generate_text"}:
+            stream_fn = getattr(self.client, "stream_generate_text", None)
+            if callable(stream_fn):
+                content = stream_fn(
+                    prompt=args.get("prompt", ""),
+                    on_chunk=on_chunk,
+                    should_stop=should_stop,
+                )
+            else:
+                content = self.client.generate_text(prompt=args.get("prompt", ""))[
+                    "content"
+                ]
+                if on_chunk:
+                    on_chunk(content)
+            return {"action": "generate_text", "content": content}
+
+        return self.execute(action, args, approval)
 
     @staticmethod
     def _running_tests() -> bool:

@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import sys
 from datetime import datetime
-from typing import Dict
+from typing import Dict, List, Optional
 
+from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import QApplication
 
 from victus.app import VictusApp
@@ -27,6 +28,56 @@ from victus.domains.system.system_plugin import SystemPlugin
 from victus.ui.popup_window import PopupWindow
 
 
+class GenerationWorker(QThread):
+    chunk = Signal(str)
+    finished = Signal(str)
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        victus: VictusApp,
+        user_text: str,
+        context: Context,
+        steps: List[PlanStep],
+    ) -> None:
+        super().__init__()
+        self.victus = victus
+        self.user_text = user_text
+        self.context = context
+        self.steps = steps
+        self._stop_requested = False
+        self._saw_chunk = False
+
+    def stop(self) -> None:
+        self._stop_requested = True
+
+    def _should_stop(self) -> bool:
+        return self._stop_requested
+
+    def _emit_chunk(self, text: str) -> None:
+        self._saw_chunk = True
+        self.chunk.emit(text)
+
+    def run(self) -> None:  # type: ignore[override]
+        try:
+            results = self.victus.run_request_streaming(
+                user_input=self.user_text,
+                context=self.context,
+                domain="productivity",
+                steps=self.steps,
+                stream_callbacks={self.steps[0].id: self._emit_chunk},
+                stop_requests={self.steps[0].id: self._should_stop},
+            )
+            final_text = PopupController._format_results(results)
+            if final_text and not self._saw_chunk:
+                self.chunk.emit(final_text)
+            self.finished.emit(final_text)
+        except PolicyError as exc:
+            self.failed.emit(f"Denied: {exc}")
+        except Exception as exc:  # noqa: BLE001 - minimal surface message
+            self.failed.emit(f"Error: {exc}")
+
+
 class PopupController:
     """Runs the popup window directly for local testing."""
 
@@ -35,6 +86,8 @@ class PopupController:
 
         self.victus = self._build_victus_app()
         self.popup = PopupWindow(self._handle_submit)
+        self.popup.stop_requested.connect(self._handle_stop_request)
+        self.worker: Optional[GenerationWorker] = None
         self._show_popup()
 
     def _show_popup(self) -> None:
@@ -72,24 +125,47 @@ class PopupController:
         ]
 
     def _handle_submit(self, text: str) -> None:
+        self._cancel_worker()
         self.popup.append_user_message(text)
         self.popup.set_thinking()
-        try:
-            results = self.victus.run_request(
-                user_input=text,
-                context=self._build_context(),
-                domain="productivity",
-                steps=self._build_steps(text),
-            )
-            response_text = self._format_results(results)
-            self.popup.append_victus_message(response_text)
-            self.popup.set_ready()
-        except PolicyError as exc:
-            self.popup.append_victus_message(f"Denied: {exc}")
+        steps = self._build_steps(text)
+        context = self._build_context()
+        self.popup.begin_stream_message("Victus")
+        worker = GenerationWorker(self.victus, text, context, steps)
+        worker.chunk.connect(self.popup.append_stream_chunk)
+        worker.finished.connect(self._handle_worker_finished)
+        worker.failed.connect(self._handle_worker_failed)
+        worker.finished.connect(self._clear_worker)
+        worker.failed.connect(self._clear_worker)
+        self.worker = worker
+        worker.start()
+
+    def _handle_worker_finished(self, final_text: str) -> None:
+        self.popup.end_stream_message()
+        if not final_text:
+            self.popup.append_victus_message("No response")
+        self.popup.set_ready()
+
+    def _handle_worker_failed(self, message: str) -> None:
+        self.popup.end_stream_message()
+        self.popup.append_victus_message(message)
+        if message.startswith("Denied:"):
             self.popup.set_denied()
-        except Exception as exc:  # noqa: BLE001 - display minimal error message
-            self.popup.append_victus_message(f"Error: {exc}")
+        else:
             self.popup.set_error()
+
+    def _handle_stop_request(self) -> None:
+        if self.worker:
+            self.worker.stop()
+
+    def _cancel_worker(self) -> None:
+        if self.worker:
+            self.worker.stop()
+            self.worker.wait(2000)
+            self.worker = None
+
+    def _clear_worker(self, *_args) -> None:
+        self.worker = None
 
     @staticmethod
     def _format_results(results: Dict[str, object]) -> str:

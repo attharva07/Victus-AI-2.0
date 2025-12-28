@@ -24,10 +24,11 @@ def use_openai_provider(monkeypatch):
 
 def build_plan():
     return Plan(
-        goal="play music",
+        goal="check status",
         domain="system",
-        steps=[PlanStep(id="step-1", tool="system", action="open_app", args={"app": "spotify"})],
+        steps=[PlanStep(id="step-1", tool="system", action="status", args={})],
         risk="low",
+        origin="router",
     )
 
 
@@ -81,6 +82,21 @@ def test_executor_requires_policy_signature():
         engine.execute(build_plan(), approval)
 
 
+def test_executor_blocks_planner_originated_system_plan():
+    plan = Plan(
+        goal="status",
+        domain="system",
+        steps=[PlanStep(id="step-1", tool="system", action="status", args={})],
+        risk="low",
+        origin="planner",
+    )
+    context = build_context()
+    approval = PolicyEngine().evaluate(plan, context)
+    engine = ExecutionEngine({"system": SystemPlugin()})
+    with pytest.raises(ExecutionError):
+        engine.execute(plan, approval)
+
+
 def test_executor_runs_approved_steps():
     plan = build_plan()
     context = build_context()
@@ -88,7 +104,7 @@ def test_executor_runs_approved_steps():
     engine = ExecutionEngine({"system": SystemPlugin()})
     results = engine.execute(plan, approval)
     assert "step-1" in results
-    assert results["step-1"]["action"] == "open_app"
+    assert results["step-1"]["action"] == "status"
 
 
 def test_executor_rejects_unapproved_step_id():
@@ -107,6 +123,7 @@ def test_executor_enforces_plugin_validation():
         domain="system",
         steps=[PlanStep(id="step-1", tool="system", action="open_app", args={"app": "unknown"})],
         risk="low",
+        origin="router",
     )
     context = build_context()
     approval = PolicyEngine().evaluate(bad_plan, context)
@@ -145,6 +162,7 @@ def test_executor_rejects_approval_reused_for_different_plan():
         domain="system",
         steps=[PlanStep(id="step-2", tool="system", action="open_app", args={"app": "notes"})],
         risk="low",
+        origin="router",
     )
 
     engine = ExecutionEngine({"system": SystemPlugin()})

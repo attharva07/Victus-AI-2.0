@@ -64,6 +64,7 @@ class Plan:
     data_outbound: DataOutbound = field(default_factory=DataOutbound)
     risk: str = "low"
     notes: str = ""
+    origin: str = "planner"
 
     def __post_init__(self) -> None:
         if self.domain not in {"system", "productivity", "mixed"}:
@@ -72,6 +73,8 @@ class Plan:
             raise ValueError("risk must be low, medium, or high")
         if not self.steps:
             raise ValueError("Plan must include at least one step")
+        if self.origin not in {"planner", "router"}:
+            raise ValueError("origin must be 'planner' or 'router'")
 
 
 @dataclass

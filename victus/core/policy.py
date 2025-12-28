@@ -139,6 +139,7 @@ def compute_policy_signature(
             "domain": plan.domain,
             "risk": plan.risk,
             "requires_confirmation": plan.requires_confirmation,
+            "origin": getattr(plan, "origin", "planner"),
             "data_outbound": asdict(plan.data_outbound),
             "steps": [
                 {

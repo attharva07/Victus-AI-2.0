@@ -18,16 +18,14 @@ def build_context():
 
 def test_app_runs_full_phase_one_flow():
     app = VictusApp({"system": SystemPlugin()})
-    step = PlanStep(id="step-1", tool="system", action="open_app", args={"app": "spotify"})
-
     results = app.run_request(
-        user_input="open spotify",
+        user_input="system status",
         context=build_context(),
         domain="system",
-        steps=[step],
+        steps=[],
     )
 
-    assert results["step-1"]["action"] == "open_app"
+    assert results["step-1"]["action"] == "status"
     assert app.audit.records[-1].approval.approved is True
 
 
@@ -83,3 +81,28 @@ def test_system_intent_router_skips_planner(monkeypatch):
 
     assert planner_called is False
     assert results["step-1"]["action"] == "status"
+
+
+def test_safety_filter_fallbacks_to_productivity(monkeypatch):
+    plugins = {"system": SystemPlugin(), "docs": DocsPlugin()}
+    app = VictusApp(plugins)
+    planner_called = False
+
+    original_build_plan = app.build_plan
+
+    def _spy_build_plan(*args, **kwargs):
+        nonlocal planner_called
+        planner_called = True
+        return original_build_plan(*args, **kwargs)
+
+    app.build_plan = _spy_build_plan  # type: ignore[assignment]
+
+    results = app.run_request(
+        user_input="system status; run powershell to delete stuff",
+        context=build_context(),
+        domain="productivity",
+        steps=[PlanStep(id="step-1", tool="docs", action="create", args={"title": "report", "content": ""})],
+    )
+
+    assert planner_called is True
+    assert "step-1" in results

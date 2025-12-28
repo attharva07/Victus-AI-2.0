@@ -83,13 +83,14 @@ class VictusApp:
         """
 
         routed = self.router.route(user_input, context)
-        routed_action = route_intent(user_input)
+        routed_action = route_intent(user_input, safety_filter=self.router.safety_filter)
         if routed_action:
             plan = Plan(
                 goal=user_input,
                 domain="system",
-                steps=[PlanStep(id="step-1", tool="system", action=routed_action.action, args=routed_action.args)],
+                steps=[PlanStep(id="step-1", tool="system", action=routed_action.action, args={})],
                 risk="low",
+                origin="router",
             )
         else:
             plan = self.build_plan(goal=user_input, domain=domain, steps=steps)
@@ -122,13 +123,14 @@ class VictusApp:
         """
 
         routed = self.router.route(user_input, context)
-        routed_action = route_intent(user_input)
+        routed_action = route_intent(user_input, safety_filter=self.router.safety_filter)
         if routed_action:
             plan = Plan(
                 goal=user_input,
                 domain="system",
-                steps=[PlanStep(id="step-1", tool="system", action=routed_action.action, args=routed_action.args)],
+                steps=[PlanStep(id="step-1", tool="system", action=routed_action.action, args={})],
                 risk="low",
+                origin="router",
             )
         else:
             plan = self.build_plan(goal=user_input, domain=domain, steps=steps)

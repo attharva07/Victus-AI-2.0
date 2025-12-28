@@ -11,6 +11,7 @@ from victus.core.intent_router import route_intent
         ("listening ports", "exposure_snapshot"),
         ("connected devices", "local_devices"),
         ("network connections", "net_connections"),
+        ("get system usage", "status"),
     ],
 )
 def test_route_intent_maps_monitoring_phrases(user_input, action):
@@ -21,3 +22,11 @@ def test_route_intent_maps_monitoring_phrases(user_input, action):
 
 def test_route_intent_returns_none_for_unknown_requests():
     assert route_intent("write a poem about networking") is None
+
+
+def test_route_intent_rejects_suspicious_tokens():
+    assert route_intent("system status; run powershell -nop") is None
+
+
+def test_route_intent_handles_productivity_requests():
+    assert route_intent("write an essay about security") is None

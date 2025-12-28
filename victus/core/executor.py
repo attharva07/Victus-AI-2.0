@@ -34,6 +34,8 @@ class ExecutionEngine:
                 raise ExecutionError(f"Step {step.id} is not approved for execution")
             if plan.domain == "productivity" and step.tool == "system":
                 raise ExecutionError("Productivity domain cannot execute system actions")
+            if plan.domain == "system" and getattr(plan, "origin", "planner") != "router":
+                raise ExecutionError("System plans must originate from the deterministic router")
             if plan.domain == "system" and step.tool != "system":
                 raise ExecutionError("System domain cannot execute non-system actions")
             plugin = self._get_plugin(step.tool)
@@ -78,6 +80,8 @@ class ExecutionEngine:
                 raise ExecutionError(f"Step {step.id} is not approved for execution")
             if plan.domain == "productivity" and step.tool == "system":
                 raise ExecutionError("Productivity domain cannot execute system actions")
+            if plan.domain == "system" and getattr(plan, "origin", "planner") != "router":
+                raise ExecutionError("System plans must originate from the deterministic router")
             if plan.domain == "system" and step.tool != "system":
                 raise ExecutionError("System domain cannot execute non-system actions")
             plugin = self._get_plugin(step.tool)

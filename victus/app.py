@@ -88,7 +88,7 @@ class VictusApp:
             plan = Plan(
                 goal=user_input,
                 domain="system",
-                steps=[PlanStep(id="step-1", tool="system", action=routed_action.action, args={})],
+                steps=[PlanStep(id="step-1", tool="system", action=routed_action.action, args=routed_action.args)],
                 risk="low",
                 origin="router",
             )
@@ -128,7 +128,7 @@ class VictusApp:
             plan = Plan(
                 goal=user_input,
                 domain="system",
-                steps=[PlanStep(id="step-1", tool="system", action=routed_action.action, args={})],
+                steps=[PlanStep(id="step-1", tool="system", action=routed_action.action, args=routed_action.args)],
                 risk="low",
                 origin="router",
             )

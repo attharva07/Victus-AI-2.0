@@ -30,3 +30,18 @@ def test_route_intent_rejects_suspicious_tokens():
 
 def test_route_intent_handles_productivity_requests():
     assert route_intent("write an essay about security") is None
+
+
+@pytest.mark.parametrize(
+    "user_input,focus",
+    [
+        ("memory usage", "memory"),
+        ("cpu usage", "cpu"),
+        ("disk usage", "disk"),
+    ],
+)
+def test_route_intent_maps_system_focus(user_input, focus):
+    routed = route_intent(user_input)
+    assert routed is not None
+    assert routed.action == "status"
+    assert routed.args == {"focus": focus}

@@ -26,6 +26,7 @@ from victus.domains.productivity.allowlisted_plugins import (
 )
 from victus.domains.system.system_plugin import SystemPlugin
 from victus.ui.popup_window import PopupWindow
+from victus.ui.renderers import render_system_result
 
 
 class GenerationWorker(QThread):
@@ -173,6 +174,9 @@ class PopupController:
             return "No response"
         first = next(iter(results.values()))
         if isinstance(first, dict):
+            system_rendered = render_system_result(first)
+            if system_rendered:
+                return system_rendered
             for key in ("content", "summary"):
                 if key in first:
                     return str(first[key])

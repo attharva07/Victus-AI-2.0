@@ -43,7 +43,9 @@ class SystemPlugin(BasePlugin):
             self._validate_open_app(args)
         elif action == "net_snapshot":
             self._validate_net_snapshot(args)
-        elif action in {"status", "net_connections", "exposure_snapshot", "bt_status", "local_devices", "access_overview"}:
+        elif action == "status":
+            self._validate_status(args)
+        elif action in {"net_connections", "exposure_snapshot", "bt_status", "local_devices", "access_overview"}:
             return
         else:
             raise ExecutionError("Unknown system action requested")
@@ -52,7 +54,7 @@ class SystemPlugin(BasePlugin):
         if not approval.policy_signature:
             raise ExecutionError("Missing policy signature")
         if action == "status":
-            return self._status_snapshot()
+            return self._status_snapshot(args)
         if action == "open_app":
             return {"action": action, "opened": args.get("app")}
         if action == "net_snapshot":
@@ -81,20 +83,72 @@ class SystemPlugin(BasePlugin):
         if detail not in self._net_details:
             raise ExecutionError("net_snapshot detail must be 'summary' or 'interfaces'")
 
-    def _status_snapshot(self) -> Dict[str, Any]:
+    def _validate_status(self, args: Dict[str, Any]) -> None:
+        focus = args.get("focus")
+        if focus is None:
+            return
+        if not isinstance(focus, str) or focus not in {"cpu", "memory", "disk"}:
+            raise ExecutionError("status focus must be one of: cpu, memory, disk")
+
+    def _status_snapshot(self, args: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        focus = (args or {}).get("focus")
         notes: List[str] = []
-        data: Dict[str, Any] = {"cpu_percent": None, "memory_percent": None, "disk_percent": None}
+        data: Dict[str, Any] = {
+            "cpu_percent": None,
+            "memory_used_bytes": None,
+            "memory_total_bytes": None,
+            "memory_available_bytes": None,
+            "memory_percent": None,
+            "disk_used_bytes": None,
+            "disk_total_bytes": None,
+            "disk_free_bytes": None,
+            "disk_percent": None,
+        }
+
         if psutil is None:
             notes.append("psutil not available; returning placeholder metrics")
         else:
             try:
-                data["cpu_percent"] = psutil.cpu_percent(interval=0)
-                data["memory_percent"] = psutil.virtual_memory().percent
-                data["disk_percent"] = psutil.disk_usage("/").percent
+                psutil.cpu_percent(interval=None)
+                data["cpu_percent"] = psutil.cpu_percent(interval=0.25)
+
+                mem = psutil.virtual_memory()
+                data["memory_used_bytes"] = mem.used
+                data["memory_total_bytes"] = mem.total
+                data["memory_available_bytes"] = mem.available
+                data["memory_percent"] = mem.percent
+
+                disk_path = "C:\\" if platform.system().lower() == "windows" else "/"
+                disk = psutil.disk_usage(disk_path)
+                data["disk_used_bytes"] = disk.used
+                data["disk_total_bytes"] = disk.total
+                data["disk_free_bytes"] = disk.free
+                data["disk_percent"] = disk.percent
+                data["disk_path"] = disk_path
             except Exception as exc:  # pragma: no cover - unexpected platform errors
                 notes.append(f"Failed to collect system metrics: {exc}")
 
-        return {"ok": True, "action": "status", "data": data, "notes": notes}
+        filtered_data = self._filter_metrics_by_focus(data, focus) if focus else data
+        result: Dict[str, Any] = {"ok": True, "action": "status", "data": filtered_data, "notes": notes}
+        if focus:
+            result["focus"] = focus
+        return result
+
+    @staticmethod
+    def _filter_metrics_by_focus(metrics: Dict[str, Any], focus: str) -> Dict[str, Any]:
+        focus_fields = {
+            "cpu": ["cpu_percent"],
+            "memory": [
+                "memory_used_bytes",
+                "memory_total_bytes",
+                "memory_available_bytes",
+                "memory_percent",
+            ],
+            "disk": ["disk_used_bytes", "disk_total_bytes", "disk_free_bytes", "disk_percent", "disk_path"],
+        }
+        if focus not in focus_fields:
+            return metrics
+        return {field: metrics.get(field) for field in focus_fields[focus] if field in metrics}
 
     def _net_connections(self) -> Dict[str, Any]:
         ps = self._require_psutil()

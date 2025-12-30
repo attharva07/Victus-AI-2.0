@@ -35,5 +35,5 @@ class Router:
         if not routed:
             return None
 
-        step = PlanStep(id="step-1", tool="system", action=routed.action, args={})
+        step = PlanStep(id="step-1", tool="system", action=routed.action, args=routed.args)
         return Plan(goal=user_input, domain="system", steps=[step], risk="low", origin="router")

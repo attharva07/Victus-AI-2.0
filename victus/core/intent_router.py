@@ -25,8 +25,21 @@ def route_intent(user_input: str, safety_filter: SafetyFilter | None = None) -> 
     if filter_to_use.is_suspicious(user_input):
         return None
 
+    focus_phrases: Dict[str, List[str]] = {
+        "memory": ["memory usage", "ram usage"],
+        "cpu": ["cpu usage"],
+        "disk": ["disk usage", "storage usage"],
+    }
+    for focus, phrases in focus_phrases.items():
+        if any(phrase in normalized for phrase in phrases):
+            return RoutedAction(action="status", args={"focus": focus})
+
+    status_keywords = ["cpu", "memory", "ram", "disk", "storage", "uptime", "battery", "system stats", "system usage"]
+    status_phrases = ["system status", "status check", "system health", "get system usage"]
+    if any(keyword in normalized for keyword in status_keywords) or any(phrase in normalized for phrase in status_phrases):
+        return RoutedAction(action="status", args={})
+
     intent_map: Dict[str, List[str]] = {
-        "status": ["system status", "status check", "system health", "system usage", "get system usage"],
         "net_snapshot": ["network snapshot", "net snapshot", "network summary", "network status"],
         "net_connections": ["list connections", "network connections", "active connections"],
         "exposure_snapshot": ["listening ports", "open ports", "port status"],

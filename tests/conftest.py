@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -30,10 +32,10 @@ def _install_psutil_stub():
         def name(self):  # pragma: no cover - only used when stub active
             raise AccessDenied(pid=self.pid)
 
-    def net_connections(kind=None):
+    def net_connections(kind=None):  # pragma: no cover - stub placeholder
         return []
 
-    def disk_partitions(all=True):
+    def disk_partitions(all=True):  # pragma: no cover - stub placeholder
         return []
 
     def win_service_get(name):  # pragma: no cover - stub placeholder
@@ -50,7 +52,11 @@ def _install_psutil_stub():
     sys.modules["psutil"] = psutil_stub
 
 
-try:
-    import psutil  # noqa: F401
-except ImportError:  # pragma: no cover - fallback when dependency missing locally
-    _install_psutil_stub()
+def _ensure_psutil():
+    try:
+        import psutil  # noqa: F401
+    except ImportError:  # pragma: no cover - fallback when dependency missing locally
+        _install_psutil_stub()
+
+
+_ensure_psutil()

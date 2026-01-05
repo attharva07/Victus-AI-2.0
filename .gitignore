@@ -1,4 +1,38 @@
+# Environment
 .env
+.env.*
+venv/
+.venv/
+
+# Python
 __pycache__/
 *.pyc
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Build and packaging
+build/
+dist/
+*.egg-info/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Logs and reports
+*.log
+.coverage
+coverage.xml
+htmlcov/
+reports/*.html
+victus/data/**/*.jsonl
+
+# Local outputs
+output/
+tmp/
+temp/
+
+# Tooling
+.idea/
+.vscode/

@@ -1,4 +1,7 @@
 pytest
+pytest-cov
+ruff
+pre-commit
 PySide6
 python-dotenv
 psutil>=5.9.8

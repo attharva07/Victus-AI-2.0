@@ -7,6 +7,7 @@ from victus.tools.weekly_report import generate_report
 def test_weekly_report_includes_regression_suggestions():
     base_ts = datetime.now(timezone.utc).isoformat()
     long_message = "oops " * 40
+
     events = []
     for idx in range(3):
         events.append(
@@ -25,6 +26,8 @@ def test_weekly_report_includes_regression_suggestions():
                 failure={
                     "code": "boom",
                     "message": long_message,
+
+                    "message": "oops",
                     "exception_type": "Exception",
                     "stack_hash": "stack-1",
                     "details_redacted": True,
@@ -42,3 +45,4 @@ def test_weekly_report_includes_regression_suggestions():
     assert "evt-0" in report
     assert "recommended_target: victus/core/executor.py" in report
     assert "example_details:" in report
+

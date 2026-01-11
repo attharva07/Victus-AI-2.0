@@ -38,6 +38,8 @@ def _group_recurring(events: Iterable[FailureEvent]):
         groups[key]["events"].append(event)
     for data in groups.values():
         data["events"].sort(key=lambda e: (e.ts or "", e.event_id or ""))
+
+        data["events"].sort(key=lambda e: (e.ts, e.event_id))
     return groups
 
 
@@ -128,6 +130,10 @@ def _short_message(message: str | None, limit: int = 120) -> str:
         return compact
     return f"{compact[:limit].rstrip()}…"
 
+    if component:
+        return f"victus.core.{component}"
+    return f"victus.domains.{event.domain}"
+
 
 def _format_regression_suggestions(groups: Dict[str, Dict[str, object]]) -> str:
     lines = ["## Suggested Regression Tests"]
@@ -149,6 +155,9 @@ def _format_regression_suggestions(groups: Dict[str, Dict[str, object]]) -> str:
         lines.append(
             f"  - example_details: component={example.component}, code={example.failure.get('code')}, message={message}"
         )
+        lines.append(f"- signature: {key}")
+        lines.append(f"  - count: {data['count']}")
+        lines.append(f"  - example_event_ids: {', '.join(event_ids)}")
         lines.append(f"  - recommended_target: {target}")
     return "\n".join(lines)
 

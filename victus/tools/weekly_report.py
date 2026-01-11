@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
@@ -37,6 +37,8 @@ def _group_recurring(events: Iterable[FailureEvent]):
         groups[key]["count"] += 1
         groups[key]["events"].append(event)
     for data in groups.values():
+        data["events"].sort(key=lambda e: (e.ts or "", e.event_id or ""))
+
         data["events"].sort(key=lambda e: (e.ts, e.event_id))
     return groups
 
@@ -109,6 +111,25 @@ def _format_backlog(groups: Dict[str, Dict[str, object]]) -> str:
 
 def _infer_test_target(event: FailureEvent) -> str:
     component = event.component
+    if component == "executor":
+        return "victus/core/executor.py"
+    if component in {"router", "policy"}:
+        return "victus/app.py"
+    if component == "memory":
+        return "victus/core/memory/"
+    if component in {"tool", "parser"}:
+        return "victus/core/"
+    return f"victus/domains/{event.domain}/"
+
+
+def _short_message(message: str | None, limit: int = 120) -> str:
+    if not message:
+        return ""
+    compact = " ".join(message.split())
+    if len(compact) <= limit:
+        return compact
+    return f"{compact[:limit].rstrip()}…"
+
     if component:
         return f"victus.core.{component}"
     return f"victus.domains.{event.domain}"
@@ -127,6 +148,13 @@ def _format_regression_suggestions(groups: Dict[str, Dict[str, object]]) -> str:
         example: FailureEvent = data["example"]
         event_ids = [event.event_id for event in events[:3]]
         target = _infer_test_target(example)
+        message = _short_message(example.failure.get("message"))
+        lines.append(f"- signature: {key}")
+        lines.append(f"  - count: {data['count']}")
+        lines.append(f"  - example_event_ids: {', '.join(event_ids)}")
+        lines.append(
+            f"  - example_details: component={example.component}, code={example.failure.get('code')}, message={message}"
+        )
         lines.append(f"- signature: {key}")
         lines.append(f"  - count: {data['count']}")
         lines.append(f"  - example_event_ids: {', '.join(event_ids)}")
@@ -159,7 +187,8 @@ def main(argv: list[str] | None = None) -> int:
 
     report_body = generate_report(events)
 
-    report_path = Path("victus/reports/weekly") / f"{start.isocalendar().year:04d}-{start.isocalendar().week:02d}.md"
+    iso = start.isocalendar()
+    report_path = Path("victus/reports/weekly") / f"{iso.year:04d}-W{iso.week:02d}.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(report_body, encoding="utf-8")
     print(report_path)

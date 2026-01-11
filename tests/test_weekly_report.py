@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta, timezone
 from victus.core.failures import FailureEvent, FailureLogger
 from victus.tools import weekly_report
@@ -44,6 +45,7 @@ def test_weekly_report_generates_markdown_file(tmp_path, monkeypatch):
     files = list(report_dir.glob("*.md"))
     assert files
     content = files[0].read_text()
+    assert re.match(r"^\d{4}-W\d{2}\.md$", files[0].name)
     assert "Weekly Failure Report" in content
     assert "Totals" in content
 

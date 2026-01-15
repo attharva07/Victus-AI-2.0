@@ -3,12 +3,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, Optional
 
-from fastapi import Body, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -117,7 +116,6 @@ async def turn_endpoint(payload: TurnRequest = Body(...), request: Request) -> S
         raise HTTPException(status_code=400, detail="Message is required")
 
     logger.info("TURN received: %s", message[:120])
-    start_time = time.monotonic()
 
     async def event_stream() -> AsyncIterator[bytes]:
         first_token_sent = False
@@ -223,23 +221,20 @@ async def _forward_event_to_logs(event: TurnEvent) -> None:
 
 def _log_status(status: str) -> None:
     if status == "thinking":
-        logger.info("LLM status: thinking")
+        logger.info("LLM: thinking")
     elif status == "executing":
-        logger.info("LLM status: executing")
+        logger.info("LLM: executing")
     elif status == "done":
-        logger.info("LLM status: done")
+        logger.info("LLM: done")
     elif status == "error":
-        logger.info("LLM status: error")
+        logger.info("LLM: error")
     else:
-        logger.info("LLM status: %s", status)
+        logger.info("LLM: %s", status)
 
 
 def _log_tool_start(tool: Optional[str], action: Optional[str], args: Optional[Dict[str, Any]]) -> None:
     summary = _summarize_args(args)
-    tool_name = tool or "unknown"
-    action_name = action or "unknown"
-    args_label = f" args={summary}" if summary else ""
-    logger.info("TOOL start: %s.%s%s", tool_name, action_name, args_label)
+    logger.info("TOOL start: %s %s %s", tool or "unknown", action or "unknown", summary)
 
 
 def _log_tool_done(tool: Optional[str], result: Any) -> None:
@@ -247,9 +242,7 @@ def _log_tool_done(tool: Optional[str], result: Any) -> None:
     if isinstance(result, dict):
         error = result.get("error")
     if error:
-        tool_name = tool or "unknown"
-        logger.info("TOOL done: %s failed: %s", tool_name, error)
-        logger.info("Task failed: %s", error)
+        logger.info("TOOL done: %s failed: %s", tool or "unknown", error)
     else:
         logger.info("TOOL done: %s ok", tool or "unknown")
 
@@ -265,14 +258,14 @@ def _log_error(message: str) -> None:
         logger.error("Task error: %s", normalized)
     else:
         logger.error("ERROR: %s", normalized)
-    logger.error("LLM error: %s", normalized)
+    logger.error("LLM: error - %s", normalized)
 
 
 def _summarize_args(args: Optional[Dict[str, Any]]) -> str:
     if not args:
         return ""
     try:
-        summary = json.dumps(args, ensure_ascii=False, separators=(",", ":"))
+        summary = json.dumps(args, ensure_ascii=False)
     except TypeError:
         summary = str(args)
     if len(summary) > 120:

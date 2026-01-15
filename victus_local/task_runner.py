@@ -135,13 +135,6 @@ def _open_app(args: Dict[str, Any]) -> Dict[str, Any]:
     target = _validate_open_app_args(args)
     try:
         _open_path_or_app(target)
-        focused = None
-        if sys.platform.startswith("win"):
-            focused = _focus_windows_app(target)
-        if focused is True:
-            logger.info("Opened app and focused.")
-        elif focused is False:
-            logger.info("Opened app (could not focus).")
     except Exception as exc:  # noqa: BLE001
         raise TaskError(f"Unable to open app '{target}': {exc}") from exc
     return {"opened": target}

@@ -3,12 +3,10 @@ const logConsole = document.getElementById("log-console");
 const chatInput = document.getElementById("chat-input");
 const chatOutput = document.getElementById("chat-output");
 const chatSend = document.getElementById("chat-send");
-const chatStop = document.getElementById("chat-stop");
 const errorBanner = document.getElementById("error-banner");
 let streamingMessage = null;
 let streamingText = null;
 let activeStreamState = null;
-let activeController = null;
 
 function setStatus(label, state) {
   statusPill.textContent = label;
@@ -153,12 +151,11 @@ async function sendChat() {
   if (!message) {
     return;
   }
-  setStreamingUI(true);
+  chatSend.disabled = true;
   hideErrorBanner();
   appendChat("You", message);
   chatInput.value = "";
   activeStreamState = { hasToken: false, hasError: false, hasOutput: false };
-  activeController = new AbortController();
 
   try {
     const response = await fetch("/api/turn", {
@@ -177,10 +174,8 @@ async function sendChat() {
     }
     await readTurnStream(response);
   } catch (error) {
-    if (error?.name !== "AbortError") {
-      appendChat("Victus", "Network error while contacting server.");
-      updateStatus("error");
-    }
+    appendChat("Victus", "Network error while contacting server.");
+    updateStatus("error");
     endStreamMessage();
   } finally {
     activeController = null;
@@ -205,10 +200,6 @@ async function readTurnStream(response) {
   if (buffer.trim()) {
     parseSseBuffer(`${buffer}\n\n`);
   }
-
-  if (activeStreamState && !activeStreamState.hasToken && !activeStreamState.hasError && !activeStreamState.hasOutput) {
-    appendChat("Victus", "No response.");
-  }
   activeStreamState = null;
 }
 
@@ -221,10 +212,6 @@ function handleTurnEvent(payload) {
   if (payload.event === "token") {
     const textChunk = payload.text ?? payload.token ?? "";
     if (textChunk) {
-      if (activeStreamState) {
-        activeStreamState.hasToken = true;
-        activeStreamState.hasOutput = true;
-      }
       appendStreamChunk(textChunk);
     }
     return;
@@ -235,9 +222,7 @@ function handleTurnEvent(payload) {
       action: payload.action,
       args: payload.args,
     });
-    if (activeStreamState) {
-      activeStreamState.hasOutput = true;
-    }
+    appendChat("Victus", formatToolStart(payload));
     return;
   }
   if (payload.event === "tool_done") {
@@ -252,12 +237,9 @@ function handleTurnEvent(payload) {
     }
     return;
   }
-  if (payload.event === "metrics") {
-    appendActivityLog("metrics", { ttft_ms: payload.ttft_ms });
-    return;
-  }
   if (payload.event === "clarify") {
-    appendActivityLog("clarify", { message: payload.message });
+    appendChat("Victus", payload.message || "Can you clarify?");
+    endStreamMessage();
     if (activeStreamState) {
       activeStreamState.hasOutput = true;
     }
@@ -268,10 +250,6 @@ function handleTurnEvent(payload) {
     appendChat("Victus", message);
     updateStatus("error");
     maybeShowMemoryBanner(message);
-    if (activeStreamState) {
-      activeStreamState.hasError = true;
-      activeStreamState.hasOutput = true;
-    }
     endStreamMessage();
   }
   if (payload.event) {
@@ -324,6 +302,9 @@ async function getResponseErrorMessage(response) {
       message = bodyText;
     }
   }
+  if (message === "Not Found") {
+    return "Error retrieving response.";
+  }
   return message;
 }
 
@@ -352,16 +333,22 @@ function parseSseBuffer(buffer) {
       const payload = JSON.parse(data);
       handleTurnEvent(payload);
     } catch (error) {
-      appendActivityLog("client_error", { message: "Malformed response from server." });
+      appendChat("Victus", "Received malformed response from server.");
       updateStatus("error");
-      if (activeStreamState) {
-        activeStreamState.hasError = true;
-        activeStreamState.hasOutput = true;
-      }
       endStreamMessage();
     }
   });
   return remainder;
+}
+
+function formatToolStart(payload) {
+  const action = payload?.action || "task";
+  const toolArgs = payload?.args || {};
+  const argsSummary = Object.values(toolArgs).join(", ");
+  if (argsSummary) {
+    return `Task: ${action}(${argsSummary}) started.`;
+  }
+  return `Task: ${action} started.`;
 }
 
 function formatToolResult(payload) {
@@ -369,9 +356,6 @@ function formatToolResult(payload) {
   if (error) {
     updateStatus("error");
     maybeShowMemoryBanner(error);
-    if (activeStreamState) {
-      activeStreamState.hasError = true;
-    }
     return `Task failed: ${error}`;
   }
   if (payload?.result?.opened) {

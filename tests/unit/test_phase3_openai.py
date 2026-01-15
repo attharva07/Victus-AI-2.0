@@ -43,7 +43,7 @@ def test_openai_blocked_without_privacy_opt_in(openai_allowlist, base_context):
     step = PlanStep(id="step-1", tool="openai", action="generate_text", args={"prompt": "send report"})
 
     with pytest.raises(PolicyError):
-        app.run_request("draft status", context=base_context, domain="productivity", steps=[step])
+        app.run_request_sync("draft status", context=base_context, domain="productivity", steps=[step])
 
 
 class RecordingOpenAIPlugin(OpenAIClientPlugin):
@@ -70,7 +70,7 @@ def test_openai_prompts_are_redacted_before_call(openai_allowlist):
 
     secret_prompt = "summarize my password ABC-123"
     step = PlanStep(id="step-1", tool="openai", action="generate_text", args={"prompt": secret_prompt})
-    app.run_request("summarize secret", context=context, domain="productivity", steps=[step])
+    app.run_request_sync("summarize secret", context=context, domain="productivity", steps=[step])
 
     assert plugin.prompts, "plugin was not invoked"
     assert all("ABC-123" not in prompt for prompt in plugin.prompts)
@@ -116,7 +116,7 @@ def test_openai_client_is_mocked(openai_allowlist):
         action="draft_email",
         args={"to": "a@example.com", "subject": "hi", "body": "hello"},
     )
-    app.run_request("email", context=context, domain="productivity", steps=[step])
+    app.run_request_sync("email", context=context, domain="productivity", steps=[step])
 
     assert mock_client.calls, "mock client should record calls instead of real API usage"
 
@@ -134,7 +134,7 @@ def test_openai_outline_returns_structured_result(openai_allowlist):
     app = VictusApp({"openai": plugin}, policy_engine=policy)
 
     step = PlanStep(id="step-1", tool="openai", action="outline", args={"topic": "release plan"})
-    results = app.run_request("outline", context=context, domain="productivity", steps=[step])
+    results = app.run_request_sync("outline", context=context, domain="productivity", steps=[step])
 
     assert results["step-1"].get("outline"), "outline should be returned"
 
@@ -175,7 +175,7 @@ def test_audit_logs_redact_openai_prompts(openai_allowlist):
     prompt_with_secret = "draft with secret token-xyz"
     step = PlanStep(id="step-1", tool="openai", action="generate_text", args={"prompt": prompt_with_secret})
 
-    app.run_request("draft", context=context, domain="productivity", steps=[step])
+    app.run_request_sync("draft", context=context, domain="productivity", steps=[step])
     logged = app.audit.records[-1]
     serialized_plan = str(logged.plan)
 
@@ -202,7 +202,7 @@ def test_generate_and_summarize_outputs(openai_allowlist):
         PlanStep(id="step-2", tool="openai", action="summarize", args={"text": "long text"}),
     ]
 
-    results = app.run_request("multi", context=context, domain="productivity", steps=steps)
+    results = app.run_request_sync("multi", context=context, domain="productivity", steps=steps)
 
     assert "content" in results["step-1"]
     assert "summary" in results["step-2"]

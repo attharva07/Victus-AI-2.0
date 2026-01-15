@@ -99,3 +99,25 @@ class PolicyError(Exception):
 
 class ExecutionError(Exception):
     """Raised when execution preconditions are not met."""
+
+
+@dataclass
+class IntentPlan:
+    kind: str
+    tool: Optional[str] = None
+    action: Optional[str] = None
+    args: Dict[str, Any] = field(default_factory=dict)
+    message: Optional[str] = None
+
+
+@dataclass
+class TurnEvent:
+    event: str
+    status: Optional[str] = None
+    token: Optional[str] = None
+    tool: Optional[str] = None
+    action: Optional[str] = None
+    args: Optional[Dict[str, Any]] = None
+    result: Optional[Any] = None
+    message: Optional[str] = None
+    step_id: Optional[str] = None

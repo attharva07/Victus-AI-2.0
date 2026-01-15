@@ -11,40 +11,21 @@
       <header class="app-header">
         <div>
           <h1>Victus Local UI</h1>
-          <p class="subtitle">Prototype chat + tasks with live logs</p>
+          <p class="subtitle">Unified chat + task pipeline with live logs</p>
         </div>
         <div class="status-pill" id="status-pill">Disconnected</div>
       </header>
 
       <main class="app-main">
         <section class="panel chat-panel">
-          <h2>Chat</h2>
+          <h2>Conversation</h2>
           <div class="chat-output" id="chat-output">
-            <p class="muted">Send a prompt to the Victus pipeline.</p>
+            <p class="muted">Type a request and watch Victus stream the response.</p>
           </div>
           <div class="chat-input">
-            <textarea id="chat-input" rows="3" placeholder="Ask Victus anything..."></textarea>
+            <textarea id="chat-input" rows="3" placeholder="Ask or command Victus..."></textarea>
             <button id="chat-send">Send</button>
           </div>
-        </section>
-
-        <section class="panel task-panel">
-          <h2>Quick Tasks</h2>
-          <div class="task-group">
-            <label for="task-app">Open app</label>
-            <div class="task-row">
-              <input id="task-app" type="text" placeholder="Notepad / Calculator / App path" />
-              <button data-task="open_app">Run</button>
-            </div>
-          </div>
-          <div class="task-group">
-            <label for="task-youtube">Open YouTube search / URL</label>
-            <div class="task-row">
-              <input id="task-youtube" type="text" placeholder="lofi hip hop / https://youtube.com/..." />
-              <button data-task="open_youtube">Run</button>
-            </div>
-          </div>
-          <div class="task-result" id="task-result"></div>
         </section>
 
         <section class="panel log-panel">

@@ -2,7 +2,7 @@
 
 Launch this script locally to open the Victus popup immediately. No
 hotkeys, tray icons, or background listeners are used. All requests flow
-through ``VictusApp.run_request`` to preserve policy and executor
+through ``VictusApp.run_request_streaming`` to preserve policy and executor
 coverage.
 """
 

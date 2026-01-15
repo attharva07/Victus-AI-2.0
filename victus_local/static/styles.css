@@ -8,6 +8,7 @@
   --accent: #6c8cff;
   --success: #27d697;
   --warning: #ffb454;
+  --error: #ff6b6b;
 }
 
 * {
@@ -62,6 +63,12 @@ body {
 .status-pill.busy {
   color: var(--warning);
   border-color: rgba(255, 180, 84, 0.5);
+}
+
+.status-pill.error,
+.status-pill.denied {
+  color: var(--error);
+  border-color: rgba(255, 107, 107, 0.5);
 }
 
 .app-main {
@@ -123,26 +130,6 @@ button {
 button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-}
-
-.task-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.task-row {
-  display: flex;
-  gap: 8px;
-}
-
-.task-row input {
-  flex: 1;
-}
-
-.task-result {
-  font-size: 14px;
-  color: var(--muted);
 }
 
 .log-console {

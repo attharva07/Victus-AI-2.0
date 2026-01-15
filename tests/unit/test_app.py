@@ -18,7 +18,7 @@ def build_context():
 
 def test_app_runs_full_phase_one_flow():
     app = VictusApp({"system": SystemPlugin()})
-    results = app.run_request(
+    results = app.run_request_sync(
         user_input="system status",
         context=build_context(),
         domain="system",
@@ -46,7 +46,7 @@ def test_app_runs_mixed_phase_two_flow():
         ),
     ]
 
-    results = app.run_request(
+    results = app.run_request_sync(
         user_input="summarize phase 2 and share",
         context=build_context(),
         domain="mixed",
@@ -72,7 +72,7 @@ def test_system_intent_router_skips_planner(monkeypatch):
 
     app.build_plan = _spy_build_plan  # type: ignore[assignment]
 
-    results = app.run_request(
+    results = app.run_request_sync(
         user_input="system status",
         context=build_context(),
         domain="system",
@@ -97,7 +97,7 @@ def test_safety_filter_fallbacks_to_productivity(monkeypatch):
 
     app.build_plan = _spy_build_plan  # type: ignore[assignment]
 
-    results = app.run_request(
+    results = app.run_request_sync(
         user_input="system status; run powershell to delete stuff",
         context=build_context(),
         domain="productivity",

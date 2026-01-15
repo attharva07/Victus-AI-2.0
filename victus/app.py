@@ -8,20 +8,21 @@ Approval -> Execute -> Audit. Real interfaces (UI/voice/hotkey) will call into
 `VictusApp.run_request` in later phases.
 """
 
-from dataclasses import replace
+import asyncio
+from dataclasses import asdict, replace
+from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, Sequence
+from typing import Any, AsyncIterator, Callable, Dict, Sequence
 
 from .core.approval import issue_approval
 from .core.audit import AuditLogger
 from .core.failures import FailureEvent, FailureLogger, hash_stack, safe_user_intent
 from .core.executor import ExecutionEngine
-from .core.intent_router import route_intent
 from .core.planner import Planner
 from .core.policy import PolicyEngine
 from .core.router import Router
 from .core.sanitization import sanitize_plan
-from .core.schemas import Approval, Context, Plan, PlanStep, PolicyError
+from .core.schemas import Approval, Context, IntentPlan, Plan, PlanStep, PolicyError, PrivacySettings, TurnEvent
 from .domains.base import BasePlugin
 from .config.runtime import get_llm_provider, is_outbound_llm_provider
 
@@ -32,6 +33,10 @@ class VictusApp:
         plugins: Dict[str, BasePlugin],
         policy_engine: PolicyEngine | None = None,
         audit_logger: AuditLogger | None = None,
+        *,
+        context_factory: Callable[[], Context] | None = None,
+        rule_router: Callable[[str, Context], Plan | None] | None = None,
+        intent_planner: Callable[[str, Context], IntentPlan | Any] | None = None,
     ) -> None:
         self.router = Router()
         self.planner = Planner()
@@ -39,6 +44,9 @@ class VictusApp:
         self.executor = ExecutionEngine(plugins, signature_secret=self.policy_engine.signature_secret)
         self.audit = audit_logger or AuditLogger()
         self.failure_logger = FailureLogger(Path("victus/data/failures"))
+        self.context_factory = context_factory or self._default_context
+        self.rule_router = rule_router
+        self.intent_planner = intent_planner
 
     def build_plan(self, goal: str, domain: str, steps: Sequence[PlanStep], **kwargs) -> Plan:
         """Create a plan using the deterministic planner stub."""
@@ -79,20 +87,156 @@ class VictusApp:
             stop_requests=stop_requests,
         )
 
-    def run_request(self, user_input: str, context: Context, domain: str, steps: Sequence[PlanStep]) -> Dict[str, object]:
+    async def run_request(
+        self,
+        user_input: str,
+        *,
+        context: Context | None = None,
+        domain: str | None = None,
+        steps: Sequence[PlanStep] | None = None,
+    ) -> AsyncIterator[TurnEvent]:
+        """Run the unified request pipeline and stream structured events."""
+
+        message = user_input.strip()
+        if not message:
+            yield TurnEvent(event="status", status="error")
+            yield TurnEvent(event="error", message="Message is required.")
+            return
+
+        active_context = context or self.context_factory()
+        yield TurnEvent(event="status", status="thinking")
+
+        plan: Plan | None = None
+        intent_plan: IntentPlan | None = None
+        try:
+            if self.rule_router:
+                plan = self.rule_router(message, active_context)
+            else:
+                plan = self.router.map_intent_to_plan(message)
+
+            if plan is None and self.intent_planner:
+                intent_plan = await self._resolve_intent_plan(message, active_context)
+
+            if plan is None and intent_plan:
+                if intent_plan.kind == "tool":
+                    if not intent_plan.tool or not intent_plan.action:
+                        raise ValueError("Intent planner returned incomplete tool data.")
+                    step = PlanStep(
+                        id="step-1",
+                        tool=intent_plan.tool,
+                        action=intent_plan.action,
+                        args=intent_plan.args,
+                    )
+                    derived_domain = domain or self.policy_engine.tool_domains.get(intent_plan.tool, "productivity")
+                    plan = Plan(goal=message, domain=derived_domain, steps=[step], risk="low", origin="planner")
+                elif intent_plan.kind == "clarify":
+                    yield TurnEvent(event="status", status="done")
+                    yield TurnEvent(
+                        event="clarify",
+                        message=intent_plan.message or "Can you clarify what you want Victus to do?",
+                    )
+                    return
+
+            if plan is None:
+                plan_steps = steps or [
+                    PlanStep(
+                        id="openai-1",
+                        tool="openai",
+                        action="generate_text",
+                        args={"prompt": message},
+                    )
+                ]
+                plan_domain = domain or "productivity"
+                plan = self.build_plan(goal=message, domain=plan_domain, steps=plan_steps)
+
+            prepared_plan, approval = self.request_approval(plan, active_context)
+        except PolicyError as exc:
+            yield TurnEvent(event="status", status="denied")
+            yield TurnEvent(event="error", message=str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            self._log_failure(message, active_context, domain or "productivity", steps or [], exc)
+            yield TurnEvent(event="status", status="error")
+            yield TurnEvent(event="error", message=str(exc))
+            return
+
+        yield TurnEvent(event="status", status="executing")
+        for step in prepared_plan.steps:
+            yield TurnEvent(
+                event="tool_start",
+                tool=step.tool,
+                action=step.action,
+                args=step.args,
+                step_id=step.id,
+            )
+
+        token_queue: asyncio.Queue[TurnEvent] = asyncio.Queue()
+
+        def _make_chunk_callback(step_id: str) -> Callable[[str], None]:
+            def _callback(chunk: str) -> None:
+                if chunk:
+                    token_queue.put_nowait(TurnEvent(event="token", token=chunk, step_id=step_id))
+
+            return _callback
+
+        stream_callbacks: Dict[str, Callable[[str], None]] = {}
+        for step in prepared_plan.steps:
+            if step.tool == "openai" and step.action in {"generate_text", "draft"}:
+                stream_callbacks[step.id] = _make_chunk_callback(step.id)
+
+        async def _execute() -> Dict[str, object]:
+            return await asyncio.to_thread(
+                self.execute_plan_streaming,
+                prepared_plan,
+                approval,
+                stream_callbacks=stream_callbacks,
+            )
+
+        execution_task = asyncio.create_task(_execute())
+
+        while True:
+            if execution_task.done() and token_queue.empty():
+                break
+            try:
+                event = await asyncio.wait_for(token_queue.get(), timeout=0.1)
+                yield event
+            except asyncio.TimeoutError:
+                continue
+
+        try:
+            results = await execution_task
+        except Exception as exc:  # noqa: BLE001
+            self._log_failure(message, active_context, plan.domain, plan.steps, exc)
+            yield TurnEvent(event="status", status="error")
+            yield TurnEvent(event="error", message=str(exc))
+            return
+
+        for step in prepared_plan.steps:
+            yield TurnEvent(
+                event="tool_done",
+                tool=step.tool,
+                action=step.action,
+                result=results.get(step.id),
+                step_id=step.id,
+            )
+
+        yield TurnEvent(event="status", status="done")
+
+        self.audit.log_request(
+            user_input=message,
+            plan=prepared_plan,
+            approval=approval,
+            results=results,
+            errors=None,
+        )
+
+    def run_request_sync(self, user_input: str, context: Context, domain: str, steps: Sequence[PlanStep]) -> Dict[str, object]:
         """Run the full request lifecycle and record an audit entry."""
 
         try:
             routed = self.router.route(user_input, context)
-            routed_action = route_intent(user_input, safety_filter=self.router.safety_filter)
-            if routed_action:
-                plan = Plan(
-                    goal=user_input,
-                    domain="system",
-                    steps=[PlanStep(id="step-1", tool="system", action=routed_action.action, args=routed_action.args)],
-                    risk="low",
-                    origin="router",
-                )
+            if routed.plan:
+                plan = routed.plan
             else:
                 plan = self.build_plan(goal=user_input, domain=domain, steps=steps)
             prepared_plan, approval = self.request_approval(plan, routed.context)
@@ -130,15 +274,8 @@ class VictusApp:
 
         try:
             routed = self.router.route(user_input, context)
-            routed_action = route_intent(user_input, safety_filter=self.router.safety_filter)
-            if routed_action:
-                plan = Plan(
-                    goal=user_input,
-                    domain="system",
-                    steps=[PlanStep(id="step-1", tool="system", action=routed_action.action, args=routed_action.args)],
-                    risk="low",
-                    origin="router",
-                )
+            if routed.plan:
+                plan = routed.plan
             else:
                 plan = self.build_plan(goal=user_input, domain=domain, steps=steps)
             prepared_plan, approval = self.request_approval(plan, routed.context)
@@ -220,3 +357,26 @@ class VictusApp:
             tags=[domain],
         )
         self.failure_logger.append(event)
+
+    @staticmethod
+    def _default_context() -> Context:
+        return Context(
+            session_id="victus-session",
+            timestamp=datetime.utcnow(),
+            mode="dev",
+            foreground_app=None,
+            privacy=PrivacySettings(allow_send_to_openai=True),
+        )
+
+    async def _resolve_intent_plan(self, message: str, context: Context) -> IntentPlan | None:
+        if not self.intent_planner:
+            return None
+        result = self.intent_planner(message, context)
+        if asyncio.iscoroutine(result):
+            return await result
+        return result  # type: ignore[return-value]
+
+    @staticmethod
+    def _serialize_event(event: TurnEvent) -> Dict[str, Any]:
+        payload = asdict(event)
+        return {key: value for key, value in payload.items() if value is not None}

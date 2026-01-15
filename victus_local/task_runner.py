@@ -51,24 +51,42 @@ def _validate_action(action: str) -> None:
         raise TaskError(f"Action '{action}' is not allowlisted")
 
 
-def _open_app(args: Dict[str, Any]) -> Dict[str, Any]:
-    target = args.get("name") or args.get("path")
+def _validate_open_app_args(args: Dict[str, Any]) -> str:
+    target = args.get("name") or args.get("path") or args.get("app")
     if not isinstance(target, str) or not target.strip():
-        raise TaskError("open_app requires 'name' or 'path'")
+        raise TaskError("open_app requires 'name', 'path', or 'app'")
+    return target
+
+
+def _validate_open_youtube_args(args: Dict[str, Any]) -> str:
+    query = args.get("query") or args.get("url")
+    if not isinstance(query, str) or not query.strip():
+        raise TaskError("open_youtube requires 'query' or 'url'")
+    return query
+
+
+def validate_task_args(action: str, args: Dict[str, Any]) -> None:
+    _validate_action(action)
+    if action == "open_app":
+        _validate_open_app_args(args)
+    elif action == "open_youtube":
+        _validate_open_youtube_args(args)
+
+
+def _open_app(args: Dict[str, Any]) -> Dict[str, Any]:
+    target = _validate_open_app_args(args)
     _open_path_or_app(target)
     return {"opened": target}
 
 
 def _open_youtube_task(args: Dict[str, Any]) -> Dict[str, Any]:
-    query = args.get("query") or args.get("url")
-    if not isinstance(query, str) or not query.strip():
-        raise TaskError("open_youtube requires 'query' or 'url'")
+    query = _validate_open_youtube_args(args)
     opened = _open_youtube(query)
     return {"opened": opened}
 
 
 async def run_task(action: str, args: Dict[str, Any]) -> Dict[str, Any]:
-    _validate_action(action)
+    validate_task_args(action, args)
 
     if action == "open_app":
         return await asyncio.to_thread(_open_app, args)

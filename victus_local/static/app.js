@@ -181,10 +181,6 @@ async function readTurnStream(response) {
   if (buffer.trim()) {
     parseSseBuffer(`${buffer}\n\n`);
   }
-
-  if (activeStreamState && !activeStreamState.hasToken && !activeStreamState.hasError && !activeStreamState.hasOutput) {
-    appendChat("Victus", "No response.");
-  }
   activeStreamState = null;
 }
 
@@ -196,10 +192,6 @@ function handleTurnEvent(payload) {
   if (payload.event === "token") {
     const textChunk = payload.text ?? payload.token ?? "";
     if (textChunk) {
-      if (activeStreamState) {
-        activeStreamState.hasToken = true;
-        activeStreamState.hasOutput = true;
-      }
       appendStreamChunk(textChunk);
     }
     return;
@@ -211,9 +203,6 @@ function handleTurnEvent(payload) {
       args: payload.args,
     });
     appendChat("Victus", formatToolStart(payload));
-    if (activeStreamState) {
-      activeStreamState.hasOutput = true;
-    }
     return;
   }
   if (payload.event === "tool_done") {
@@ -241,10 +230,6 @@ function handleTurnEvent(payload) {
     appendChat("Victus", message);
     updateStatus("error");
     maybeShowMemoryBanner(message);
-    if (activeStreamState) {
-      activeStreamState.hasError = true;
-      activeStreamState.hasOutput = true;
-    }
     endStreamMessage();
   }
 }
@@ -294,6 +279,9 @@ async function getResponseErrorMessage(response) {
       message = bodyText;
     }
   }
+  if (message === "Not Found") {
+    return "Error retrieving response.";
+  }
   return message;
 }
 
@@ -324,10 +312,6 @@ function parseSseBuffer(buffer) {
     } catch (error) {
       appendChat("Victus", "Received malformed response from server.");
       updateStatus("error");
-      if (activeStreamState) {
-        activeStreamState.hasError = true;
-        activeStreamState.hasOutput = true;
-      }
       endStreamMessage();
     }
   });
@@ -349,9 +333,6 @@ function formatToolResult(payload) {
   if (error) {
     updateStatus("error");
     maybeShowMemoryBanner(error);
-    if (activeStreamState) {
-      activeStreamState.hasError = true;
-    }
     return `Task failed: ${error}`;
   }
   if (payload?.result?.opened) {

@@ -88,6 +88,19 @@ body {
   min-height: 280px;
 }
 
+.banner {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 180, 84, 0.6);
+  background: rgba(255, 180, 84, 0.12);
+  color: var(--warning);
+  font-size: 14px;
+}
+
+.banner.hidden {
+  display: none;
+}
+
 .chat-output {
   flex: 1;
   background: #0d1017;

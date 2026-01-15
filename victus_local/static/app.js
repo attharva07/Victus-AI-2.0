@@ -3,6 +3,7 @@ const logConsole = document.getElementById("log-console");
 const chatInput = document.getElementById("chat-input");
 const chatOutput = document.getElementById("chat-output");
 const chatSend = document.getElementById("chat-send");
+const errorBanner = document.getElementById("error-banner");
 let streamingMessage = null;
 let streamingText = null;
 
@@ -29,6 +30,42 @@ function appendChat(speaker, message) {
   paragraph.innerHTML = `<strong>${speaker}:</strong> ${message}`;
   chatOutput.appendChild(paragraph);
   chatOutput.scrollTop = chatOutput.scrollHeight;
+}
+
+function appendActivityLog(event, data = {}) {
+  appendLog({
+    timestamp: new Date().toISOString(),
+    event,
+    data,
+  });
+}
+
+function showErrorBanner(message) {
+  if (!errorBanner) {
+    return;
+  }
+  errorBanner.textContent = message;
+  errorBanner.classList.remove("hidden");
+}
+
+function hideErrorBanner() {
+  if (!errorBanner) {
+    return;
+  }
+  errorBanner.textContent = "";
+  errorBanner.classList.add("hidden");
+}
+
+function isOllamaMemoryError(message) {
+  if (!message) {
+    return false;
+  }
+  const lowered = message.toLowerCase();
+  return (
+    lowered.includes("requires more memory") ||
+    lowered.includes("requires more system memory") ||
+    lowered.includes("out of memory")
+  );
 }
 
 function beginStreamMessage() {
@@ -97,6 +134,7 @@ async function sendChat() {
     return;
   }
   chatSend.disabled = true;
+  hideErrorBanner();
   appendChat("You", message);
   chatInput.value = "";
 
@@ -107,14 +145,17 @@ async function sendChat() {
       body: JSON.stringify({ message }),
     });
     if (!response.ok) {
-      const payload = await response.json();
-      appendChat("Victus", payload.detail || "Error retrieving response.");
+      const errorMessage = await getResponseErrorMessage(response);
+      appendChat("Victus", errorMessage);
+      updateStatus("error");
+      maybeShowMemoryBanner(errorMessage);
       endStreamMessage();
       return;
     }
     await readTurnStream(response);
   } catch (error) {
     appendChat("Victus", "Network error while contacting server.");
+    updateStatus("error");
     endStreamMessage();
   } finally {
     chatSend.disabled = false;
@@ -132,28 +173,11 @@ async function readTurnStream(response) {
       break;
     }
     buffer += decoder.decode(value, { stream: true });
-    const segments = buffer.split("\n\n");
-    buffer = segments.pop();
-    segments.forEach((segment) => {
-      const dataLine = segment
-        .split("\n")
-        .find((line) => line.startsWith("data: "));
-      if (!dataLine) {
-        return;
-      }
-      const payload = JSON.parse(dataLine.replace("data: ", ""));
-      handleTurnEvent(payload);
-    });
+    buffer = parseSseBuffer(buffer);
   }
 
   if (buffer.trim()) {
-    const dataLine = buffer
-      .split("\n")
-      .find((line) => line.startsWith("data: "));
-    if (dataLine) {
-      const payload = JSON.parse(dataLine.replace("data: ", ""));
-      handleTurnEvent(payload);
-    }
+    parseSseBuffer(`${buffer}\n\n`);
   }
 }
 
@@ -163,14 +187,27 @@ function handleTurnEvent(payload) {
     return;
   }
   if (payload.event === "token") {
-    appendStreamChunk(payload.token);
+    const textChunk = payload.text ?? payload.token ?? "";
+    if (textChunk) {
+      appendStreamChunk(textChunk);
+    }
     return;
   }
   if (payload.event === "tool_start") {
-    appendChat("Victus", `Running ${payload.tool}.${payload.action}...`);
+    appendActivityLog("tool_start", {
+      tool: payload.tool,
+      action: payload.action,
+      args: payload.args,
+    });
+    appendChat("Victus", formatToolStart(payload));
     return;
   }
   if (payload.event === "tool_done") {
+    appendActivityLog("tool_done", {
+      tool: payload.tool,
+      action: payload.action,
+      result: payload.result,
+    });
     appendChat("Victus", formatToolResult(payload));
     return;
   }
@@ -180,7 +217,10 @@ function handleTurnEvent(payload) {
     return;
   }
   if (payload.event === "error") {
-    appendChat("Victus", payload.message || "Request failed.");
+    const message = payload.message || "Request failed.";
+    appendChat("Victus", message);
+    updateStatus("error");
+    maybeShowMemoryBanner(message);
     endStreamMessage();
   }
 }
@@ -211,7 +251,81 @@ function updateStatus(status) {
   }
 }
 
+async function getResponseErrorMessage(response) {
+  let bodyText = "";
+  try {
+    bodyText = await response.text();
+  } catch (error) {
+    bodyText = "";
+  }
+  if (response.status === 404) {
+    return "Not Found";
+  }
+  let message = "Error retrieving response.";
+  if (bodyText) {
+    try {
+      const payload = JSON.parse(bodyText);
+      message = payload.detail || payload.message || bodyText;
+    } catch (error) {
+      message = bodyText;
+    }
+  }
+  if (message === "Not Found") {
+    return "Error retrieving response.";
+  }
+  return message;
+}
+
+function maybeShowMemoryBanner(message) {
+  if (isOllamaMemoryError(message)) {
+    showErrorBanner(
+      "Ollama memory error detected. Try a smaller model (e.g., phi-2, tinyllama, llama3.2:1b)."
+    );
+  }
+}
+
+function parseSseBuffer(buffer) {
+  const segments = buffer.split("\n\n");
+  const remainder = segments.pop() || "";
+  segments.forEach((segment) => {
+    const dataLines = segment
+      .split("\n")
+      .filter((line) => line.startsWith("data:"));
+    if (!dataLines.length) {
+      return;
+    }
+    const data = dataLines
+      .map((line) => line.replace(/^data:\s?/, ""))
+      .join("\n");
+    try {
+      const payload = JSON.parse(data);
+      handleTurnEvent(payload);
+    } catch (error) {
+      appendChat("Victus", "Received malformed response from server.");
+      updateStatus("error");
+      endStreamMessage();
+    }
+  });
+  return remainder;
+}
+
+function formatToolStart(payload) {
+  const action = payload?.action || "task";
+  const toolArgs = payload?.args || {};
+  const argsSummary = Object.values(toolArgs).join(", ");
+  if (argsSummary) {
+    return `Task: ${action}(${argsSummary}) started.`;
+  }
+  return `Task: ${action} started.`;
+}
+
 function formatToolResult(payload) {
+  const error = payload?.result?.error;
+  if (error) {
+    updateStatus("error");
+    maybeShowMemoryBanner(error);
+    return `Task failed: ${error}`;
+  }
   if (payload?.result?.opened) {
     return `Task complete: opened ${payload.result.opened}.`;
   }

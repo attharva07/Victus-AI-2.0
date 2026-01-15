@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, Optional
@@ -15,6 +16,13 @@ from victus.app import VictusApp
 from victus.core.schemas import TurnEvent
 
 from .victus_adapter import build_victus_app
+
+logger = logging.getLogger("victus_local")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s", "%H:%M:%S"))
+    logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 
 
 class LogHub:
@@ -107,6 +115,8 @@ async def turn_endpoint(payload: TurnRequest = Body(...)) -> StreamingResponse:
     if not message:
         raise HTTPException(status_code=400, detail="Message is required")
 
+    logger.info("TURN received: %s", message[:120])
+
     async def event_stream() -> AsyncIterator[bytes]:
         try:
             async for event in victus_app.run_request(message):
@@ -147,18 +157,29 @@ async def logs_stream() -> StreamingResponse:
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
+@app.get("/api/routes")
+async def list_routes() -> Dict[str, Any]:
+    routes = []
+    for route in app.routes:
+        methods = sorted(getattr(route, "methods", []) or [])
+        routes.append({"path": route.path, "methods": methods})
+    return {"routes": routes}
+
+
 def _event_payload(event: TurnEvent) -> Dict[str, Any]:
     return VictusApp._serialize_event(event)
 
 
 async def _forward_event_to_logs(event: TurnEvent) -> None:
     if event.event == "status" and event.status:
+        _log_status(event.status)
         await log_hub.emit("info", "status_update", {"status": event.status})
         return
     if event.event == "token":
         await log_hub.emit("info", "token", {"token": event.token})
         return
     if event.event == "tool_start":
+        _log_tool_start(event.tool, event.action, event.args)
         await log_hub.emit(
             "info",
             "tool_start",
@@ -166,6 +187,7 @@ async def _forward_event_to_logs(event: TurnEvent) -> None:
         )
         return
     if event.event == "tool_done":
+        _log_tool_done(event.tool, event.result)
         await log_hub.emit(
             "info",
             "tool_done",
@@ -173,7 +195,67 @@ async def _forward_event_to_logs(event: TurnEvent) -> None:
         )
         return
     if event.event == "error":
+        _log_error(event.message or "")
         await log_hub.emit("error", "turn_error", {"message": event.message})
         return
     if event.event == "clarify":
         await log_hub.emit("info", "clarify", {"message": event.message})
+
+
+def _log_status(status: str) -> None:
+    if status == "thinking":
+        logger.info("LLM: thinking")
+    elif status == "executing":
+        logger.info("LLM: executing")
+    elif status == "done":
+        logger.info("LLM: done")
+    elif status == "error":
+        logger.info("LLM: error")
+    else:
+        logger.info("LLM: %s", status)
+
+
+def _log_tool_start(tool: Optional[str], action: Optional[str], args: Optional[Dict[str, Any]]) -> None:
+    summary = _summarize_args(args)
+    logger.info("TOOL start: %s %s %s", tool or "unknown", action or "unknown", summary)
+
+
+def _log_tool_done(tool: Optional[str], result: Any) -> None:
+    error = None
+    if isinstance(result, dict):
+        error = result.get("error")
+    if error:
+        logger.info("TOOL done: %s failed: %s", tool or "unknown", error)
+    else:
+        logger.info("TOOL done: %s ok", tool or "unknown")
+
+
+def _log_error(message: str) -> None:
+    normalized = message or "Unknown error"
+    lowered = normalized.lower()
+    if _is_ollama_memory_error(normalized):
+        logger.error("LLM error: model requires more memory than available")
+    elif lowered.startswith("unable to open app"):
+        logger.error("Task error: %s", normalized)
+    elif lowered.startswith("unable to open youtube"):
+        logger.error("Task error: %s", normalized)
+    else:
+        logger.error("ERROR: %s", normalized)
+    logger.error("LLM: error - %s", normalized)
+
+
+def _summarize_args(args: Optional[Dict[str, Any]]) -> str:
+    if not args:
+        return ""
+    try:
+        summary = json.dumps(args, ensure_ascii=False)
+    except TypeError:
+        summary = str(args)
+    if len(summary) > 120:
+        summary = summary[:117] + "..."
+    return summary
+
+
+def _is_ollama_memory_error(message: str) -> bool:
+    lowered = message.lower()
+    return "requires more memory" in lowered or "requires more system memory" in lowered or "out of memory" in lowered

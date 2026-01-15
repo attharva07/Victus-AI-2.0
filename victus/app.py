@@ -211,23 +211,32 @@ class VictusApp:
             yield TurnEvent(event="error", message=str(exc))
             return
 
+        error_messages = []
         for step in prepared_plan.steps:
+            result = results.get(step.id)
+            if isinstance(result, dict) and result.get("error"):
+                error_messages.append(str(result["error"]))
             yield TurnEvent(
                 event="tool_done",
                 tool=step.tool,
                 action=step.action,
-                result=results.get(step.id),
+                result=result,
                 step_id=step.id,
             )
 
-        yield TurnEvent(event="status", status="done")
+        if error_messages:
+            error_message = error_messages[0]
+            yield TurnEvent(event="status", status="error")
+            yield TurnEvent(event="error", message=error_message)
+        else:
+            yield TurnEvent(event="status", status="done")
 
         self.audit.log_request(
             user_input=message,
             plan=prepared_plan,
             approval=approval,
             results=results,
-            errors=None,
+            errors="; ".join(error_messages) if error_messages else None,
         )
 
     def run_request_sync(self, user_input: str, context: Context, domain: str, steps: Sequence[PlanStep]) -> Dict[str, object]:

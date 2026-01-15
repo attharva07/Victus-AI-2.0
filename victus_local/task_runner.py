@@ -75,13 +75,19 @@ def validate_task_args(action: str, args: Dict[str, Any]) -> None:
 
 def _open_app(args: Dict[str, Any]) -> Dict[str, Any]:
     target = _validate_open_app_args(args)
-    _open_path_or_app(target)
+    try:
+        _open_path_or_app(target)
+    except Exception as exc:  # noqa: BLE001
+        raise TaskError(f"Unable to open app '{target}': {exc}") from exc
     return {"opened": target}
 
 
 def _open_youtube_task(args: Dict[str, Any]) -> Dict[str, Any]:
     query = _validate_open_youtube_args(args)
-    opened = _open_youtube(query)
+    try:
+        opened = _open_youtube(query)
+    except Exception as exc:  # noqa: BLE001
+        raise TaskError(f"Unable to open YouTube for '{query}': {exc}") from exc
     return {"opened": opened}
 
 

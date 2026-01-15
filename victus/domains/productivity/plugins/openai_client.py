@@ -127,11 +127,13 @@ class OpenAIClientPlugin(BasePlugin):
                     should_stop=should_stop,
                 )
             else:
-                content = self.client.generate_text(prompt=args.get("prompt", ""))[
-                    "content"
-                ]
+                content = self.client.generate_text(prompt=args.get("prompt", ""))["content"]
                 if on_chunk:
-                    on_chunk(content)
+                    chunk_size = 48
+                    for idx in range(0, len(content), chunk_size):
+                        if should_stop and should_stop():
+                            break
+                        on_chunk(content[idx : idx + chunk_size])
             return {"action": "generate_text", "content": content}
 
         return self.execute(action, args, approval)

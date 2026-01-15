@@ -1,6 +1,6 @@
-# Victus Phase 4.0 Desktop Demo (Popup UI)
+# Victus Phase 4 Popup Demo (Legacy)
 
-This demo opens the Victus popup UI directly for text-only interactions. The UI routes every request through `VictusApp.run_request` and never bypasses the policy or executor layers.
+This legacy demo opens the Qt popup UI directly for text-only interactions. The web UI (victus_local) is now the primary interface, but the popup remains useful for quick desktop checks.
 
 ## Prerequisites
 - Python 3.11+
@@ -22,16 +22,11 @@ The popup window opens immediately with no tray icon or global hotkey.
 - **Shift + Enter**: insert a newline
 - **Window close**: exit the popup
 
-## What the popup shows
-- Header: `Victus` title, status pill (Ready/Thinking/Denied/Error), and close button
-- Transcript: scrollable history with `You:` and `Victus:` entries
-- Input: multiline text box with hint line for shortcuts
-
 ## Request flow
-1. The popup sends user text to `VictusApp.run_request` with a simple OpenAI planning step (`openai.generate_text`).
-2. Privacy is configured to allow OpenAI text outbound so policy review succeeds.
-3. The returned assistant text is rendered in the transcript. Policy denials or execution errors are surfaced with clear `Denied`/`Error` labels.
+1. The popup sends user text to `VictusApp.run_request_streaming` with a simple OpenAI planning step (`openai.generate_text`).
+2. Privacy is configured to allow outbound LLM text so policy review succeeds.
+3. The returned assistant text is rendered in the transcript. Policy denials or execution errors are surfaced with `Denied`/`Error` labels.
 
 ## Notes
 - Text in/out only: no voice, vision, automation, or background listeners.
-- The UI is intended for local desktop use and may not render in headless containers.
+- The popup is intended for local desktop use and may not render in headless containers.

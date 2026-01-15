@@ -9,6 +9,10 @@ This guide is the authoritative operating manual for Codex development. Follow i
 4. **Executor** refuses to run without a valid Approval signature and only dispatches approved steps to plugins.
 5. **Audit Logger** records input, plan, approvals, results, errors, and redactions.
 
+### Unified turn pipeline (local web UI)
+- `VictusApp.run_request` streams structured events (`status`, `token`, `tool_start`, `tool_done`, `error`) for the web UI.
+- The rule router runs first, the LLM intent planner runs only when ambiguous, and policy approval is still mandatory before execution.
+
 ## Schemas Summary
 - **Context**: Includes session metadata, mode (`dev` or `prod`), foreground app, user confirmation flag, and privacy settings (screenshot, OpenAI, storage).
 - **Plan**: Goal, domain (`system`/`productivity`/`mixed`), ordered PlanSteps, risk level, confirmation requirement, outbound data settings, and notes.

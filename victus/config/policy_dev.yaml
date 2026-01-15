@@ -1,5 +1,6 @@
 allowlist:
   system: [open_app, net_snapshot, status, net_connections, exposure_snapshot, local_devices, access_overview]
+  local: [open_app, open_youtube]
   openai: [draft, generate_text, draft_email, summarize, summarize_text, outline]
   docs: [create]
   gmail: [send]

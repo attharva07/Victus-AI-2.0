@@ -27,6 +27,7 @@ class PolicyEngine:
                 "local_devices",
                 "access_overview",
             },
+            "local": {"open_app", "open_youtube"},
             "spotify": {"play"},
             "gmail": {"send"},
             "openai": {"draft", "generate_text", "draft_email", "summarize", "summarize_text", "outline"},
@@ -34,6 +35,7 @@ class PolicyEngine:
         }
         self.tool_domains: Dict[str, str] = {
             "system": "system",
+            "local": "productivity",
             "spotify": "productivity",
             "gmail": "productivity",
             "openai": "productivity",

@@ -3,13 +3,12 @@ const logConsole = document.getElementById("log-console");
 const chatInput = document.getElementById("chat-input");
 const chatOutput = document.getElementById("chat-output");
 const chatSend = document.getElementById("chat-send");
-const taskAppInput = document.getElementById("task-app");
-const taskYoutubeInput = document.getElementById("task-youtube");
-const taskResult = document.getElementById("task-result");
+let streamingMessage = null;
+let streamingText = null;
 
 function setStatus(label, state) {
   statusPill.textContent = label;
-  statusPill.classList.remove("connected", "busy");
+  statusPill.classList.remove("connected", "busy", "error", "denied");
   if (state) {
     statusPill.classList.add(state);
   }
@@ -32,16 +31,31 @@ function appendChat(speaker, message) {
   chatOutput.scrollTop = chatOutput.scrollHeight;
 }
 
+function beginStreamMessage() {
+  streamingMessage = document.createElement("p");
+  streamingText = document.createElement("span");
+  streamingMessage.innerHTML = "<strong>Victus:</strong> ";
+  streamingMessage.appendChild(streamingText);
+  chatOutput.appendChild(streamingMessage);
+}
+
+function appendStreamChunk(chunk) {
+  if (!streamingMessage) {
+    beginStreamMessage();
+  }
+  streamingText.textContent += chunk;
+  chatOutput.scrollTop = chatOutput.scrollHeight;
+}
+
+function endStreamMessage() {
+  streamingMessage = null;
+  streamingText = null;
+}
+
 function handleLogEvent(entry) {
   appendLog(entry);
-  if (entry.event === "llm_start") {
-    setStatus("LLM responding…", "busy");
-  }
-  if (entry.event === "task_start") {
-    setStatus("Running task…", "busy");
-  }
-  if (entry.event === "llm_done" || entry.event === "task_done") {
-    setStatus("Connected", "connected");
+  if (entry.event === "status_update") {
+    updateStatus(entry.data.status);
   }
 }
 
@@ -87,41 +101,124 @@ async function sendChat() {
   chatInput.value = "";
 
   try {
-    const response = await fetch("/api/chat", {
+    const response = await fetch("/api/turn", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message }),
     });
-    const payload = await response.json();
     if (!response.ok) {
+      const payload = await response.json();
       appendChat("Victus", payload.detail || "Error retrieving response.");
-    } else {
-      appendChat("Victus", payload.reply);
+      endStreamMessage();
+      return;
     }
+    await readTurnStream(response);
   } catch (error) {
     appendChat("Victus", "Network error while contacting server.");
+    endStreamMessage();
   } finally {
     chatSend.disabled = false;
   }
 }
 
-async function runTask(action, args) {
-  taskResult.textContent = "Running task...";
-  try {
-    const response = await fetch("/api/task", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, args }),
-    });
-    const payload = await response.json();
-    if (!response.ok) {
-      taskResult.textContent = payload.detail || "Task failed.";
-    } else {
-      taskResult.textContent = `Task complete: ${JSON.stringify(payload.result)}`;
+async function readTurnStream(response) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
     }
-  } catch (error) {
-    taskResult.textContent = "Network error while running task.";
+    buffer += decoder.decode(value, { stream: true });
+    const segments = buffer.split("\n\n");
+    buffer = segments.pop();
+    segments.forEach((segment) => {
+      const dataLine = segment
+        .split("\n")
+        .find((line) => line.startsWith("data: "));
+      if (!dataLine) {
+        return;
+      }
+      const payload = JSON.parse(dataLine.replace("data: ", ""));
+      handleTurnEvent(payload);
+    });
   }
+
+  if (buffer.trim()) {
+    const dataLine = buffer
+      .split("\n")
+      .find((line) => line.startsWith("data: "));
+    if (dataLine) {
+      const payload = JSON.parse(dataLine.replace("data: ", ""));
+      handleTurnEvent(payload);
+    }
+  }
+}
+
+function handleTurnEvent(payload) {
+  if (payload.event === "status") {
+    updateStatus(payload.status);
+    return;
+  }
+  if (payload.event === "token") {
+    appendStreamChunk(payload.token);
+    return;
+  }
+  if (payload.event === "tool_start") {
+    appendChat("Victus", `Running ${payload.tool}.${payload.action}...`);
+    return;
+  }
+  if (payload.event === "tool_done") {
+    appendChat("Victus", formatToolResult(payload));
+    return;
+  }
+  if (payload.event === "clarify") {
+    appendChat("Victus", payload.message || "Can you clarify?");
+    endStreamMessage();
+    return;
+  }
+  if (payload.event === "error") {
+    appendChat("Victus", payload.message || "Request failed.");
+    endStreamMessage();
+  }
+}
+
+function updateStatus(status) {
+  if (status === "thinking") {
+    setStatus("Thinking…", "busy");
+    return;
+  }
+  if (status === "executing") {
+    setStatus("Executing…", "busy");
+    return;
+  }
+  if (status === "done") {
+    setStatus("Connected", "connected");
+    endStreamMessage();
+    return;
+  }
+  if (status === "denied") {
+    setStatus("Denied", "denied");
+    endStreamMessage();
+    return;
+  }
+  if (status === "error") {
+    setStatus("Error", "error");
+    endStreamMessage();
+    return;
+  }
+}
+
+function formatToolResult(payload) {
+  if (payload?.result?.opened) {
+    return `Task complete: opened ${payload.result.opened}.`;
+  }
+  if (payload?.result) {
+    return `Task complete: ${JSON.stringify(payload.result)}.`;
+  }
+  return "Task complete.";
 }
 
 chatSend.addEventListener("click", sendChat);
@@ -130,18 +227,6 @@ chatInput.addEventListener("keydown", (event) => {
     event.preventDefault();
     sendChat();
   }
-});
-
-document.querySelectorAll("button[data-task]").forEach((button) => {
-  button.addEventListener("click", () => {
-    const task = button.dataset.task;
-    if (task === "open_app") {
-      runTask(task, { name: taskAppInput.value });
-    }
-    if (task === "open_youtube") {
-      runTask(task, { query: taskYoutubeInput.value });
-    }
-  });
 });
 
 connectWebSocket();

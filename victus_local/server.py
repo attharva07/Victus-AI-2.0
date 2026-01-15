@@ -11,8 +11,10 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .task_runner import TaskError, run_task
-from .victus_adapter import VictusAdapterError, chat as victus_chat
+from victus.app import VictusApp
+from victus.core.schemas import TurnEvent
+
+from .victus_adapter import build_victus_app
 
 
 class LogHub:
@@ -82,24 +84,11 @@ app = FastAPI()
 log_hub = LogHub()
 static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
+victus_app: VictusApp = build_victus_app()
 
 
-class ChatRequest(BaseModel):
+class TurnRequest(BaseModel):
     message: str
-
-
-class ChatResponse(BaseModel):
-    reply: str
-
-
-class TaskRequest(BaseModel):
-    action: str
-    args: Dict[str, Any] = {}
-
-
-class TaskResponse(BaseModel):
-    ok: bool
-    result: Dict[str, Any]
 
 
 @app.on_event("startup")
@@ -112,40 +101,25 @@ async def index() -> FileResponse:
     return FileResponse(static_dir / "index.html")
 
 
-@app.post("/api/chat", response_model=ChatResponse)
-async def chat_endpoint(payload: ChatRequest = Body(...)) -> ChatResponse:
+@app.post("/api/turn")
+async def turn_endpoint(payload: TurnRequest = Body(...)) -> StreamingResponse:
     message = payload.message.strip()
     if not message:
         raise HTTPException(status_code=400, detail="Message is required")
 
-    await log_hub.emit("info", "llm_start", {"message": message})
-    try:
-        reply = await victus_chat(message)
-    except VictusAdapterError as exc:
-        await log_hub.emit("error", "llm_done", {"error": str(exc)})
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except Exception as exc:
-        await log_hub.emit("error", "llm_done", {"error": str(exc)})
-        raise HTTPException(status_code=500, detail="Victus failed to respond") from exc
+    async def event_stream() -> AsyncIterator[bytes]:
+        try:
+            async for event in victus_app.run_request(message):
+                await _forward_event_to_logs(event)
+                data = json.dumps(_event_payload(event))
+                yield f"data: {data}\n\n".encode("utf-8")
+        except Exception as exc:  # noqa: BLE001
+            error_event = TurnEvent(event="error", status="error", message=str(exc))
+            await _forward_event_to_logs(error_event)
+            data = json.dumps(_event_payload(error_event))
+            yield f"data: {data}\n\n".encode("utf-8")
 
-    await log_hub.emit("info", "llm_done", {"reply": reply})
-    return ChatResponse(reply=reply)
-
-
-@app.post("/api/task", response_model=TaskResponse)
-async def task_endpoint(payload: TaskRequest = Body(...)) -> TaskResponse:
-    await log_hub.emit("info", "task_start", {"action": payload.action, "args": payload.args})
-    try:
-        result = await run_task(payload.action, payload.args)
-    except TaskError as exc:
-        await log_hub.emit("error", "task_done", {"error": str(exc)})
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        await log_hub.emit("error", "task_done", {"error": str(exc)})
-        raise HTTPException(status_code=500, detail="Task execution failed") from exc
-
-    await log_hub.emit("info", "task_done", {"action": payload.action, "result": result})
-    return TaskResponse(ok=True, result=result)
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.websocket("/ws/logs")
@@ -171,3 +145,35 @@ async def logs_stream() -> StreamingResponse:
             await log_hub.disconnect_sse(queue)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+def _event_payload(event: TurnEvent) -> Dict[str, Any]:
+    return VictusApp._serialize_event(event)
+
+
+async def _forward_event_to_logs(event: TurnEvent) -> None:
+    if event.event == "status" and event.status:
+        await log_hub.emit("info", "status_update", {"status": event.status})
+        return
+    if event.event == "token":
+        await log_hub.emit("info", "token", {"token": event.token})
+        return
+    if event.event == "tool_start":
+        await log_hub.emit(
+            "info",
+            "tool_start",
+            {"tool": event.tool, "action": event.action, "args": event.args},
+        )
+        return
+    if event.event == "tool_done":
+        await log_hub.emit(
+            "info",
+            "tool_done",
+            {"tool": event.tool, "action": event.action, "result": event.result},
+        )
+        return
+    if event.event == "error":
+        await log_hub.emit("error", "turn_error", {"message": event.message})
+        return
+    if event.event == "clarify":
+        await log_hub.emit("info", "clarify", {"message": event.message})

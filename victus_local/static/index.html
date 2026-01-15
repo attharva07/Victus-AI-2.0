@@ -19,12 +19,16 @@
       <main class="app-main">
         <section class="panel chat-panel">
           <h2>Conversation</h2>
+          <div class="banner hidden" id="error-banner"></div>
           <div class="chat-output" id="chat-output">
             <p class="muted">Type a request and watch Victus stream the response.</p>
           </div>
           <div class="chat-input">
             <textarea id="chat-input" rows="3" placeholder="Ask or command Victus..."></textarea>
-            <button id="chat-send">Send</button>
+            <div class="chat-actions">
+              <button id="chat-send">Send</button>
+              <button id="chat-stop" class="secondary" disabled>Stop</button>
+            </div>
           </div>
         </section>
 
@@ -35,6 +39,6 @@
       </main>
     </div>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=1"></script>
   </body>
 </html>

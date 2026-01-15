@@ -27,4 +27,7 @@ class LocalTaskPlugin(BasePlugin):
     def execute(self, action: str, args: Dict[str, Any], approval: Approval) -> Dict[str, Any]:
         if not approval.policy_signature:
             raise ExecutionError("Missing policy signature")
-        return asyncio.run(run_task(action, args))
+        try:
+            return asyncio.run(run_task(action, args))
+        except TaskError as exc:
+            return {"error": str(exc)}

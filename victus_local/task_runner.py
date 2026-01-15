@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import subprocess
 import sys
+import time
 import webbrowser
 from pathlib import Path
 from typing import Any, Dict
@@ -11,6 +13,9 @@ from urllib.parse import quote_plus, urlparse
 
 class TaskError(RuntimeError):
     pass
+
+
+logger = logging.getLogger(__name__)
 
 
 def _is_url(value: str) -> bool:
@@ -35,6 +40,59 @@ def _open_path_or_app(target: str) -> None:
         return
 
     subprocess.Popen(["xdg-open", target])
+
+
+def _focus_windows_app(target: str) -> bool:
+    time.sleep(0.5)
+    try:
+        import win32gui  # type: ignore[import-untyped]
+
+        target_lower = target.lower()
+        matches = []
+
+        def _enum_handler(hwnd: int, _ctx: Any) -> None:
+            if not win32gui.IsWindowVisible(hwnd):
+                return
+            title = win32gui.GetWindowText(hwnd)
+            if title and target_lower in title.lower():
+                matches.append(hwnd)
+
+        win32gui.EnumWindows(_enum_handler, None)
+        if matches:
+            win32gui.SetForegroundWindow(matches[0])
+            return True
+    except Exception:
+        pass
+
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        target_lower = target.lower()
+        handles = []
+
+        @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+        def _enum_windows(hwnd, _lparam):
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length == 0:
+                return True
+            buffer = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buffer, length + 1)
+            title = buffer.value
+            if title and target_lower in title.lower():
+                handles.append(hwnd)
+            return True
+
+        user32.EnumWindows(_enum_windows, 0)
+        if handles:
+            user32.SetForegroundWindow(handles[0])
+            return True
+    except Exception:
+        return False
+
+    return False
 
 
 def _open_youtube(query_or_url: str) -> str:
@@ -75,13 +133,26 @@ def validate_task_args(action: str, args: Dict[str, Any]) -> None:
 
 def _open_app(args: Dict[str, Any]) -> Dict[str, Any]:
     target = _validate_open_app_args(args)
-    _open_path_or_app(target)
+    try:
+        _open_path_or_app(target)
+        focused = None
+        if sys.platform.startswith("win"):
+            focused = _focus_windows_app(target)
+        if focused is True:
+            logger.info("Opened app and focused.")
+        elif focused is False:
+            logger.info("Opened app (could not focus).")
+    except Exception as exc:  # noqa: BLE001
+        raise TaskError(f"Unable to open app '{target}': {exc}") from exc
     return {"opened": target}
 
 
 def _open_youtube_task(args: Dict[str, Any]) -> Dict[str, Any]:
     query = _validate_open_youtube_args(args)
-    opened = _open_youtube(query)
+    try:
+        opened = _open_youtube(query)
+    except Exception as exc:  # noqa: BLE001
+        raise TaskError(f"Unable to open YouTube for '{query}': {exc}") from exc
     return {"opened": opened}
 
 

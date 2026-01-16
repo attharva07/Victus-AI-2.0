@@ -158,22 +158,53 @@
     }, []);
 
     useEffect(() => {
+      if (!audioActive) {
+        return undefined;
+      }
+      if (!navigator.mediaDevices?.getUserMedia) {
+        return undefined;
+      }
+
       let animationId;
-      const tick = () => {
-        if (audioActive) {
-          const time = Date.now() / 1000;
-          audioLevelRef.current = 0.35 + 0.25 * Math.sin(time * 2.2);
-        } else {
+      let audioContext;
+      let analyser;
+      let dataArray;
+      let stream;
+
+      const setupAudio = async () => {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          analyser = audioContext.createAnalyser();
+          analyser.fftSize = 256;
+          dataArray = new Uint8Array(analyser.frequencyBinCount);
+          const source = audioContext.createMediaStreamSource(stream);
+          source.connect(analyser);
+
+          const tick = () => {
+            analyser.getByteFrequencyData(dataArray);
+            const avg = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
+            audioLevelRef.current = Math.min(avg / 128, 1);
+            animationId = requestAnimationFrame(tick);
+          };
+
+          tick();
+        } catch (error) {
           audioLevelRef.current = 0;
         }
-        animationId = requestAnimationFrame(tick);
       };
 
-      tick();
+      setupAudio();
 
       return () => {
         if (animationId) {
           cancelAnimationFrame(animationId);
+        }
+        if (stream) {
+          stream.getTracks().forEach((track) => track.stop());
+        }
+        if (audioContext) {
+          audioContext.close();
         }
       };
     }, [audioActive]);

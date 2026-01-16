@@ -7,16 +7,12 @@
 
 ## Dynamic module behavior
 - Home: chat history + recent interactions summary
-- Memory: list stored memories, pin/unpin, delete, and review candidates (future-ready placeholders remain)
-- Finance/Settings: placeholders only (future-ready)
+- Memory/Finance/Settings: placeholders only (future-ready)
 
 ## Three.js sphere
 - React-owned container with Three.js canvas inside
 - Web Audio amplitude drives scale and glow
 - Context-aware hints activate only when `visual_hint` metadata is provided for long responses
-
-## Rendering
-- Assistant responses render Markdown safely (no raw HTML)
 
 ## Data feeds
 - `POST /api/turn` (SSE) for streaming tokens and turn events

@@ -1,5 +1,4 @@
 const { useEffect, useMemo, useRef, useState } = React;
-const ReactMarkdown = window.ReactMarkdown;
 
 const TABS = ["Home", "Memory", "Finance", "Settings"];
 const PLACEHOLDERS = {
@@ -24,26 +23,22 @@ const PLACEHOLDERS = {
 };
 
 const LONG_RESPONSE_THRESHOLD = 240;
-const ALLOWED_MARKDOWN_ELEMENTS = ["p", "strong", "em", "ul", "ol", "li", "code", "pre"];
 
 function App() {
   const [activeTab, setActiveTab] = useState("Home");
   const [status, setStatus] = useState({ label: "Connected", state: "connected" });
   const [messages, setMessages] = useState([]);
-  const [currentStreamBuffer, setCurrentStreamBuffer] = useState("");
+  const [streamingText, setStreamingText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [logs, setLogs] = useState([]);
   const [sphereState, setSphereState] = useState("idle");
-  const [micOn, setMicOn] = useState(false);
-  const [camOn, setCamOn] = useState(false);
+  const [audioActive, setAudioActive] = useState(false);
   const [visualHint, setVisualHint] = useState(null);
-  const [memories, setMemories] = useState([]);
-  const [memoryCandidates, setMemoryCandidates] = useState([]);
   const chatInputRef = useRef(null);
   const controllerRef = useRef(null);
   const logsSourceRef = useRef(null);
   const streamingLengthRef = useRef(0);
-  const currentStreamRef = useRef("");
+  const streamingTextRef = useRef("");
   const statusRef = useRef(status);
   const pendingVisualHintRef = useRef(null);
 
@@ -95,8 +90,8 @@ function App() {
   };
 
   const beginStream = () => {
-    setCurrentStreamBuffer("");
-    currentStreamRef.current = "";
+    setStreamingText("");
+    streamingTextRef.current = "";
     setIsStreaming(true);
     streamingLengthRef.current = 0;
     pendingVisualHintRef.current = null;
@@ -105,11 +100,11 @@ function App() {
 
   const endStream = () => {
     setIsStreaming(false);
-    if (currentStreamRef.current.trim()) {
-      setMessages((prev) => [...prev, { role: "Victus", text: currentStreamRef.current }]);
+    if (streamingTextRef.current.trim()) {
+      setMessages((prev) => [...prev, { role: "Victus", text: streamingTextRef.current }]);
     }
-    setCurrentStreamBuffer("");
-    currentStreamRef.current = "";
+    setStreamingText("");
+    streamingTextRef.current = "";
     setSphereState("idle");
 
     if (
@@ -128,14 +123,11 @@ function App() {
       controllerRef.current = null;
       appendLog("client_stop", { reason: "user" });
     }
-    if (currentStreamRef.current.trim()) {
-      setMessages((prev) => [...prev, { role: "Victus", text: currentStreamRef.current }]);
-    }
     setStatusState("Connected", "connected");
     setSphereState("idle");
     setIsStreaming(false);
-    setCurrentStreamBuffer("");
-    currentStreamRef.current = "";
+    setStreamingText("");
+    streamingTextRef.current = "";
     pendingVisualHintRef.current = null;
     streamingLengthRef.current = 0;
   };
@@ -156,20 +148,12 @@ function App() {
       const chunk = payload.text ?? payload.token ?? "";
       if (chunk) {
         streamingLengthRef.current += chunk.length;
-        setCurrentStreamBuffer((prev) => {
+        setStreamingText((prev) => {
           const nextText = `${prev}${chunk}`;
-          currentStreamRef.current = nextText;
+          streamingTextRef.current = nextText;
           return nextText;
         });
         setSphereState("streaming");
-      }
-      return;
-    }
-    if (eventType === "memory_candidate") {
-      const candidate = payload.result?.memory_candidate ?? payload.result ?? payload.memory_candidate;
-      if (candidate) {
-        setMemoryCandidates((prev) => [...prev, candidate]);
-        appendLog("memory_candidate", candidate);
       }
       return;
     }
@@ -264,6 +248,7 @@ function App() {
     chatInputRef.current.value = "";
     setStatusState("Thinking", "busy");
     beginStream();
+    setAudioActive(true);
 
     controllerRef.current = new AbortController();
 
@@ -328,7 +313,7 @@ function App() {
     source.onmessage = (event) => {
       try {
         const entry = JSON.parse(event.data);
-        if (["status_update", "tool_start", "tool_done", "turn_error", "memory_candidate"].includes(entry.event)) {
+        if (["status_update", "tool_start", "tool_done", "turn_error"].includes(entry.event)) {
           appendLog(entry.event, entry.data || {});
         }
         if (entry.event === "status_update") {
@@ -349,98 +334,8 @@ function App() {
     };
   }, []);
 
-  const fetchMemories = async () => {
-    try {
-      const response = await fetch("/memory");
-      if (!response.ok) {
-        appendLog("error", { message: "Failed to load memories." });
-        return;
-      }
-      const data = await response.json();
-      setMemories(data.items || []);
-    } catch (error) {
-      appendLog("error", { message: "Network error while loading memories." });
-    }
-  };
-
-  const saveMemory = async (memory) => {
-    try {
-      const response = await fetch("/memory", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(memory),
-      });
-      if (!response.ok) {
-        appendLog("error", { message: "Failed to save memory." });
-        return;
-      }
-      await fetchMemories();
-    } catch (error) {
-      appendLog("error", { message: "Network error while saving memory." });
-    }
-  };
-
-  const deleteMemory = async (memoryId) => {
-    try {
-      const response = await fetch(`/memory/${memoryId}`, { method: "DELETE" });
-      if (!response.ok) {
-        appendLog("error", { message: "Failed to delete memory." });
-        return;
-      }
-      await fetchMemories();
-    } catch (error) {
-      appendLog("error", { message: "Network error while deleting memory." });
-    }
-  };
-
-  useEffect(() => {
-    if (activeTab === "Memory") {
-      fetchMemories();
-    }
-  }, [activeTab]);
-
   const recentMessages = useMemo(() => messages.slice(-4), [messages]);
   const recentLogs = useMemo(() => logs.slice(-5).reverse(), [logs]);
-  const isFocusMode = useMemo(() => {
-    if (isStreaming) {
-      return currentStreamBuffer.length > LONG_RESPONSE_THRESHOLD;
-    }
-    const lastAssistant = [...messages].reverse().find((message) => message.role === "Victus");
-    return lastAssistant ? lastAssistant.text.length > LONG_RESPONSE_THRESHOLD : false;
-  }, [currentStreamBuffer, isStreaming, messages]);
-
-  const handleToggleMic = () => {
-    setMicOn((prev) => {
-      const next = !prev;
-      appendLog(next ? "mic_enabled" : "mic_disabled", {});
-      return next;
-    });
-  };
-
-  const handleToggleCam = () => {
-    setCamOn((prev) => {
-      const next = !prev;
-      appendLog(next ? "camera_enabled" : "camera_disabled", {});
-      return next;
-    });
-  };
-
-  const handlePinToggle = (memory) => {
-    saveMemory({ ...memory, pinned: !memory.pinned });
-  };
-
-  const handleSaveCandidate = (candidate) => {
-    if (!candidate?.type || !candidate?.content || !candidate?.source) {
-      appendLog("error", { message: "Memory candidate missing required fields." });
-      return;
-    }
-    saveMemory(candidate);
-    setMemoryCandidates((prev) => prev.filter((item) => item !== candidate));
-  };
-
-  const handleDismissCandidate = (candidate) => {
-    setMemoryCandidates((prev) => prev.filter((item) => item !== candidate));
-  };
 
   const renderDynamicModule = () => {
     if (activeTab === "Home") {
@@ -464,67 +359,6 @@ function App() {
             <h3>Recent Interactions</h3>
             <p className="placeholder-pill">Streaming pipeline ready</p>
             <p>Victus will populate richer insights here once memory and finance UI ships.</p>
-          </div>
-        </div>
-      );
-    }
-
-    if (activeTab === "Memory") {
-      return (
-        <div className="dynamic-list">
-          <div className="dynamic-card">
-            <h3>Stored Memories</h3>
-            {memories.length ? (
-              <ul className="memory-list">
-                {memories.map((memory) => (
-                  <li key={memory.id} className="memory-item">
-                    <div className="memory-text">
-                      <strong>{memory.type}</strong>: {memory.content}
-                    </div>
-                    <div className="memory-actions">
-                      <button
-                        className={`toggle-chip ${memory.pinned ? "active" : ""}`}
-                        onClick={() => handlePinToggle(memory)}
-                      >
-                        {memory.pinned ? "Pinned" : "Pin"}
-                      </button>
-                      <button className="toggle-chip danger" onClick={() => deleteMemory(memory.id)}>
-                        Delete
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p>No memories stored yet.</p>
-            )}
-          </div>
-          <div className="dynamic-card">
-            <h3>Memory Candidates</h3>
-            {memoryCandidates.length ? (
-              <ul className="memory-list">
-                {memoryCandidates.map((candidate, index) => (
-                  <li key={`${candidate.content}-${index}`} className="memory-item">
-                    <div className="memory-text">
-                      <strong>{candidate.type}</strong>: {candidate.content}
-                    </div>
-                    <div className="memory-actions">
-                      <button className="toggle-chip active" onClick={() => handleSaveCandidate(candidate)}>
-                        Save
-                      </button>
-                      <button className="toggle-chip danger" onClick={() => handleDismissCandidate(candidate)}>
-                        Dismiss
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p>Awaiting memory candidates from Victus.</p>
-            )}
-          </div>
-          <div className="dynamic-card">
-            Memory viewer (placeholder) · Editing will arrive in a future release.
           </div>
         </div>
       );
@@ -566,44 +400,18 @@ function App() {
       </nav>
 
       <div className="app-shell">
-        <div className={`row primary ${isFocusMode ? "focus" : ""}`}>
+        <div className="row primary">
           <section className="panel conversation-panel">
-            <div className="panel-header">
-              <h2>Conversation</h2>
-              <div className="panel-controls">
-                <button
-                  className={`toggle-chip ${micOn ? "active" : ""}`}
-                  onClick={handleToggleMic}
-                >
-                  Mic
-                </button>
-                <button
-                  className={`toggle-chip ${camOn ? "active" : ""}`}
-                  onClick={handleToggleCam}
-                >
-                  Cam
-                </button>
-              </div>
-            </div>
+            <h2>Conversation</h2>
             <div className="chat-output">
               {messages.map((message, index) => (
                 <div className="chat-message" key={`${message.role}-${index}`}>
-                  <strong>{message.role}:</strong>
-                  {message.role === "Victus" ? (
-                    <ReactMarkdown allowedElements={ALLOWED_MARKDOWN_ELEMENTS} skipHtml>
-                      {message.text}
-                    </ReactMarkdown>
-                  ) : (
-                    <span> {message.text}</span>
-                  )}
+                  <strong>{message.role}:</strong> {message.text}
                 </div>
               ))}
               {isStreaming && (
                 <div className="chat-message">
-                  <strong>Victus:</strong>
-                  <ReactMarkdown allowedElements={ALLOWED_MARKDOWN_ELEMENTS} skipHtml>
-                    {currentStreamBuffer}
-                  </ReactMarkdown>
+                  <strong>Victus:</strong> {streamingText}
                 </div>
               )}
             </div>
@@ -632,7 +440,7 @@ function App() {
 
           <section className="panel sphere-panel">
             <h2>Sphere</h2>
-            <VictusSphere audioActive={micOn} visualHint={visualHint} sphereState={sphereState} />
+            <VictusSphere audioActive={audioActive} visualHint={visualHint} sphereState={sphereState} />
             <div className="sphere-overlay">Three.js · Audio reactive</div>
           </section>
 
@@ -665,7 +473,7 @@ function App() {
             {renderDynamicModule()}
           </section>
 
-          <aside className={`panel activity-panel ${isFocusMode ? "dimmed" : ""}`}>
+          <aside className="panel activity-panel">
             <h2>Recent Activity</h2>
             <div className="activity-section">
               <h3>Live Telemetry</h3>

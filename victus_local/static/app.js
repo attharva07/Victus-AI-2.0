@@ -4,12 +4,58 @@ const chatOutput = document.getElementById("chat-output");
 const logsOutput = document.getElementById("logs-output");
 const chatSend = document.getElementById("chat-send");
 const chatStop = document.getElementById("chat-stop");
+const navLinks = document.querySelectorAll(".nav-link");
+const consoleViews = document.querySelectorAll('[data-view="console"]');
+const placeholderView = document.getElementById("placeholder-view");
+const placeholderTitle = document.getElementById("placeholder-title");
+const placeholderMessage = document.getElementById("placeholder-message");
+const placeholderList = document.getElementById("placeholder-list");
 
 let activeController = null;
 let streamingMessage = null;
 let streamingText = null;
 let logsSource = null;
 let reconnectTimeout = null;
+const apiTurnMeta = document.querySelector('meta[name="victus-api-turn"]');
+const apiTurnEndpoint = apiTurnMeta?.content || "/api/turn";
+
+const placeholderContent = {
+  planner: {
+    title: "Planner",
+    message: "Coming soon",
+    items: [
+      "Intent routing",
+      "Plan → execute breakdown",
+      "Tool approvals",
+      "Session summaries",
+    ],
+  },
+  memory: {
+    title: "Memory",
+    message: "Coming soon",
+    items: [
+      "Explicit remember commands",
+      "Memory search and recall",
+      "Memory audit log",
+      "Safety gate (no secrets)",
+    ],
+  },
+  finance: {
+    title: "Finance",
+    message: "Coming soon",
+    items: [
+      "Add transaction",
+      "Monthly summary",
+      "Export logbook",
+      "Budget targets",
+    ],
+  },
+  settings: {
+    title: "Settings",
+    message: "Coming soon",
+    items: ["Model/provider selection", "Hotkeys", "Allowed tools", "Logs level"],
+  },
+};
 
 function setStatus(label, state) {
   statusPill.textContent = label;
@@ -45,6 +91,14 @@ function appendMessage(role, message) {
   span.textContent = message;
   paragraph.appendChild(strong);
   paragraph.appendChild(span);
+  chatOutput.appendChild(paragraph);
+  chatOutput.scrollTop = chatOutput.scrollHeight;
+}
+
+function appendToolLine(message) {
+  const paragraph = document.createElement("p");
+  paragraph.className = "tool-line";
+  paragraph.textContent = message;
   chatOutput.appendChild(paragraph);
   chatOutput.scrollTop = chatOutput.scrollHeight;
 }
@@ -165,6 +219,9 @@ function handleTurnEvent(eventType, payload) {
       action: payload.action,
       result: payload.result,
     });
+    if (payload.tool) {
+      appendToolLine(`Tool complete: ${payload.tool}`);
+    }
     return;
   }
   if (eventType === "error") {
@@ -213,7 +270,7 @@ async function sendChat() {
   activeController = new AbortController();
 
   try {
-    const response = await fetch("/api/turn", {
+    const response = await fetch(apiTurnEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message }),
@@ -279,6 +336,38 @@ function connectLogsStream() {
   };
 }
 
+function setActiveView(view) {
+  navLinks.forEach((link) => {
+    link.classList.toggle("active", link.dataset.view === view);
+  });
+
+  if (view === "console") {
+    consoleViews.forEach((item) => {
+      item.hidden = false;
+    });
+    placeholderView.hidden = true;
+    return;
+  }
+
+  const content = placeholderContent[view];
+  if (!content) {
+    return;
+  }
+
+  consoleViews.forEach((item) => {
+    item.hidden = true;
+  });
+  placeholderView.hidden = false;
+  placeholderTitle.textContent = content.title;
+  placeholderMessage.textContent = content.message;
+  placeholderList.innerHTML = "";
+  content.items.forEach((item) => {
+    const listItem = document.createElement("li");
+    listItem.textContent = item;
+    placeholderList.appendChild(listItem);
+  });
+}
+
 chatSend.addEventListener("click", sendChat);
 chatStop.addEventListener("click", stopStreaming);
 chatInput.addEventListener("keydown", (event) => {
@@ -286,6 +375,12 @@ chatInput.addEventListener("keydown", (event) => {
     event.preventDefault();
     sendChat();
   }
+});
+
+navLinks.forEach((link) => {
+  link.addEventListener("click", () => {
+    setActiveView(link.dataset.view);
+  });
 });
 
 document.addEventListener("keydown", (event) => {
@@ -296,3 +391,4 @@ document.addEventListener("keydown", (event) => {
 
 setStreamingUI(false);
 connectLogsStream();
+setActiveView("console");

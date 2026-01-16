@@ -4,23 +4,34 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Victus Local UI</title>
+    <meta name="victus-api-turn" content="/api/turn" />
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
+    <nav class="top-nav">
+      <div class="nav-left">Victus Local</div>
+      <div class="nav-center">
+        <button class="nav-link active" data-view="console">Console</button>
+        <button class="nav-link" data-view="planner">Planner</button>
+        <button class="nav-link" data-view="memory">Memory</button>
+        <button class="nav-link" data-view="finance">Finance</button>
+        <button class="nav-link" data-view="settings">Settings</button>
+      </div>
+      <div class="nav-right">
+        <span class="status-label">Status</span>
+        <span class="status-pill" id="status-pill">Disconnected</span>
+      </div>
+    </nav>
     <div class="app-shell">
-      <header class="app-header">
+      <header class="app-header" data-view="console">
         <div>
           <p class="eyebrow">Victus Local</p>
           <h1>Assistant Console</h1>
           <p class="subtitle">Conversation streaming + live logs</p>
         </div>
-        <div class="status-strip">
-          <span class="status-label">Status</span>
-          <span class="status-pill" id="status-pill">Disconnected</span>
-        </div>
       </header>
 
-      <main class="app-body">
+      <main class="app-body" data-view="console">
         <section class="panel conversation-panel">
           <h2>Conversation</h2>
           <div class="chat-output" id="chat-output"></div>
@@ -42,8 +53,21 @@
           <div class="logs-output" id="logs-output"></div>
         </aside>
       </main>
+
+      <section class="placeholder-view" id="placeholder-view" hidden>
+        <div class="panel placeholder-card">
+          <p class="eyebrow" id="placeholder-eyebrow">Feature Preview</p>
+          <h2 id="placeholder-title">Planner</h2>
+          <p class="subtitle" id="placeholder-message">Coming soon</p>
+          <ul class="placeholder-list" id="placeholder-list"></ul>
+          <button id="placeholder-button" disabled>Enable in v1</button>
+          <p class="placeholder-note">Backend not enabled yet</p>
+        </div>
+      </section>
+
+      <footer class="app-footer">UI Build: baseline-navbar-1</footer>
     </div>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=baseline-navbar-1"></script>
   </body>
 </html>

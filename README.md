@@ -41,11 +41,11 @@ Key guarantees:
      set LLM_PROVIDER=openai
      set OPENAI_API_KEY=your_key_here
      ```
-4. Run the local UI:
+4. Run the local UI (React + Three.js):
    ```bash
    python -m uvicorn victus_local.server:app --host 127.0.0.1 --port 8000
    ```
-5. Open <http://127.0.0.1:8000> and use the single chatbox.
+5. Open <http://127.0.0.1:8000> to view the React dashboard with the audio-reactive Three.js sphere and dynamic module container placeholders.
 
 ## Streaming behavior
 `POST /api/turn` returns `text/event-stream` and emits structured events:
@@ -55,7 +55,12 @@ Key guarantees:
 - `memory_used` / `memory_written`
 - `clarify` / `error`
 
-The UI renders tokens as they arrive and logs every pipeline event in the Activity tab.
+The UI renders tokens as they arrive and logs every pipeline event in the Live Logs panel.
+
+## UI architecture highlights
+- React dashboard UI (no fallback HTML pages)
+- Three.js sphere rendered in the center panel with Web Audio reactivity
+- Dynamic module container swaps placeholder content for Home/Memory/Finance/Settings without routing
 
 ## Memory + finance overview
 **Memory v1** is local, append-only JSONL storage with a gate that blocks sensitive data and only writes explicit or safe, important items:

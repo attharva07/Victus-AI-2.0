@@ -1,20 +1,24 @@
 # Victus UI
 
-## Layout
-- Single chat input with streaming output
-- Status pill: Connected / Thinking / Executing / Done / Error
-- Right-side panels with tabs:
-  - Activity
-  - Tools
-  - Memory
-  - Finance
+## Layout contract
+- Fixed navbar with Victus Local logo, tabs, and status pill
+- Row 1 panels: Conversation (left), Three.js sphere (center), Live Logs (right)
+- Row 2 panels: Dynamic Module (left, content swaps per tab), Recent Activity (right)
+
+## Dynamic module behavior
+- Home: chat history + recent interactions summary
+- Memory: list stored memories, pin/unpin, delete, and review candidates (future-ready placeholders remain)
+- Finance/Settings: placeholders only (future-ready)
+
+## Three.js sphere
+- React-owned container with Three.js canvas inside
+- Web Audio amplitude drives scale and glow
+- Context-aware hints activate only when `visual_hint` metadata is provided for long responses
+
+## Rendering
+- Assistant responses render Markdown safely (no raw HTML)
 
 ## Data feeds
 - `POST /api/turn` (SSE) for streaming tokens and turn events
 - `GET /api/logs/stream` for global event logs
-- Finance routes for summaries and exports
-
-## Finance tab
-- Add transaction form
-- Monthly summary widget
-- Markdown export preview
+- Finance routes for summaries and exports (placeholders only)

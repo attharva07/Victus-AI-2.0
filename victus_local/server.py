@@ -14,6 +14,8 @@ from pydantic import BaseModel
 
 from victus.app import VictusApp
 from victus.core.schemas import TurnEvent
+from .memory_store_v2 import VictusMemory, VictusMemoryStore
+from .turn_handler import TurnHandler
 from .victus_adapter import build_victus_app
 
 logger = logging.getLogger("victus_local")
@@ -89,13 +91,31 @@ class LogHub:
 
 app = FastAPI()
 log_hub = LogHub()
-static_dir = Path(__file__).parent / "static"
+static_dir = Path(__file__).parent / "frontend"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 victus_app = build_victus_app()
+memory_store_v2 = VictusMemoryStore()
+turn_handler = TurnHandler(victus_app, memory_store_v2=memory_store_v2)
 
 
 class TurnRequest(BaseModel):
     message: str
+
+
+class MemoryRequest(BaseModel):
+    id: Optional[str] = None
+    type: str
+    content: str
+    source: str
+    confidence: float = 0.7
+    tags: list[str] = []
+    created_at: Optional[str] = None
+    last_used_at: Optional[str] = None
+    pinned: bool = False
+
+
+class MemoryResponse(BaseModel):
+    items: list[VictusMemory]
 
 
 @app.on_event("startup")
@@ -118,7 +138,7 @@ async def turn_endpoint(request: Request, payload: TurnRequest = Body(...)) -> S
 
     async def event_stream() -> AsyncIterator[bytes]:
         try:
-            async for event in victus_app.run_request(message):
+            async for event in turn_handler.run_turn(message):
                 if await request.is_disconnected():
                     logger.info("Client disconnected; stopping turn.")
                     break
@@ -143,6 +163,26 @@ async def deprecated_chat_endpoint() -> JSONResponse:
         status_code=410,
         content={"error": "Deprecated endpoint. Use POST /api/turn (SSE)."},
     )
+
+
+@app.get("/memory", response_model=MemoryResponse)
+async def list_memory() -> MemoryResponse:
+    return MemoryResponse(items=memory_store_v2.list())
+
+
+@app.post("/memory", response_model=VictusMemory)
+async def upsert_memory(payload: MemoryRequest = Body(...)) -> VictusMemory:
+    data = payload.model_dump()
+    if not data.get("created_at"):
+        data["created_at"] = datetime.utcnow().isoformat() + "Z"
+    memory = VictusMemory(**data)
+    memory_store_v2.upsert(memory)
+    return memory
+
+
+@app.delete("/memory/{memory_id}")
+async def delete_memory(memory_id: str) -> Dict[str, bool]:
+    return {"deleted": memory_store_v2.delete(memory_id)}
 
 
 @app.websocket("/ws/logs")
@@ -212,6 +252,9 @@ async def _forward_event_to_logs(event: TurnEvent) -> None:
         return
     if event.event == "memory_written":
         await log_hub.emit("info", "memory_written", event.result or {})
+        return
+    if event.event == "memory_candidate":
+        await log_hub.emit("info", "memory_candidate", event.result or {})
         return
     if event.event == "error":
         _log_error(event.message or "")

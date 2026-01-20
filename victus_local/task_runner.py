@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import subprocess
 import sys
 import time
@@ -9,6 +10,15 @@ import webbrowser
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import quote_plus, urlparse
+
+from .app_aliases import (
+    build_clarify_message,
+    is_safe_alias,
+    load_alias_store,
+    normalize_app_name,
+    resolve_app_target,
+    save_alias_store,
+)
 
 
 class TaskError(RuntimeError):
@@ -25,7 +35,7 @@ def _is_url(value: str) -> bool:
 
 def _open_path_or_app(target: str) -> None:
     if sys.platform.startswith("win"):
-        subprocess.Popen(["cmd", "/c", "start", "", target], shell=True)
+        os.startfile(target)  # noqa: S606
         return
     if sys.platform == "darwin":
         subprocess.Popen(["open", "-a", target])
@@ -133,11 +143,49 @@ def validate_task_args(action: str, args: Dict[str, Any]) -> None:
 
 def _open_app(args: Dict[str, Any]) -> Dict[str, Any]:
     target = _validate_open_app_args(args)
+    requested_alias = str(args.get("requested_alias") or target)
+    alias_store = load_alias_store()
+    aliases = alias_store.get("aliases", {}) if isinstance(alias_store, dict) else {}
+    if not isinstance(aliases, dict):
+        aliases = {}
+
+    resolution = resolve_app_target(target, aliases)
+    if resolution.decision == "clarify":
+        candidates = resolution.candidates or []
+        return {
+            "decision": "clarify",
+            "assistant_message": build_clarify_message(candidates),
+            "candidates": candidates,
+            "original": requested_alias,
+            "resolution": {"source": resolution.source},
+        }
+    if resolution.decision != "open" or not resolution.target:
+        message = f"I couldn't open {requested_alias}. Try a different name."
+        return {"error": message, "assistant_message": message}
+
+    target = resolution.target
     try:
         _open_path_or_app(target)
     except Exception as exc:  # noqa: BLE001
         raise TaskError(f"Unable to open app '{target}': {exc}") from exc
-    return {"opened": target}
+
+    alias_learned = None
+    normalized_alias = normalize_app_name(requested_alias)
+    if is_safe_alias(normalized_alias) and normalized_alias not in aliases:
+        aliases[normalized_alias] = target
+        save_alias_store(aliases)
+        alias_learned = {"alias": normalized_alias, "target": target}
+
+    display_name = resolution.label or requested_alias
+    assistant_message = f"Opened {display_name}."
+    response = {
+        "opened": target,
+        "assistant_message": assistant_message,
+        "resolution": {"source": resolution.source, "alias": normalized_alias},
+    }
+    if alias_learned:
+        response["alias_learned"] = alias_learned
+    return response
 
 
 def _open_youtube_task(args: Dict[str, Any]) -> Dict[str, Any]:

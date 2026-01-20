@@ -1,0 +1,10 @@
+{
+  "aliases": {
+    "calculator": "calc.exe",
+    "notepad": "notepad.exe",
+    "paint": "mspaint.exe",
+    "cmd": "cmd.exe",
+    "powershell": "powershell.exe"
+  },
+  "updated_at": "1970-01-01T00:00:00Z"
+}

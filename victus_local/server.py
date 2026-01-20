@@ -334,6 +334,25 @@ async def _forward_event_to_logs(event: TurnEvent) -> None:
             "tool_done",
             {"tool": event.tool, "action": event.action, "result": event.result},
         )
+        if event.action == "open_app" and isinstance(event.result, dict):
+            resolution = event.result.get("resolution")
+            if isinstance(resolution, dict):
+                await log_hub.emit(
+                    "info",
+                    "app_resolved",
+                    {
+                        "source": resolution.get("source"),
+                        "alias": resolution.get("alias"),
+                        "opened": event.result.get("opened"),
+                    },
+                )
+            alias_learned = event.result.get("alias_learned")
+            if isinstance(alias_learned, dict):
+                await log_hub.emit(
+                    "info",
+                    "app_alias_learned",
+                    {"alias": alias_learned.get("alias"), "target": alias_learned.get("target")},
+                )
         if event.action == "media_play":
             result = event.result or {}
             if isinstance(result, dict) and result.get("error"):

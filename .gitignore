@@ -35,6 +35,7 @@ tmp/
 temp/
 victus_local/credentials.py
 victus_local/admin_credentials.json
+victus_local/app_aliases.json
 
 # Tooling
 .idea/

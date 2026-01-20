@@ -27,7 +27,7 @@ class PolicyEngine:
                 "local_devices",
                 "access_overview",
             },
-            "local": {"open_app", "open_youtube"},
+            "local": {"open_app", "open_youtube", "media_play", "media_stop"},
             "spotify": {"play"},
             "gmail": {"send"},
             "openai": {"draft", "generate_text", "draft_email", "summarize", "summarize_text", "outline"},

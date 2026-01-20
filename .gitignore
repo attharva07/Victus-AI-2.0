@@ -32,6 +32,8 @@ victus/data/**/*.jsonl
 output/
 tmp/
 temp/
+victus_local/credentials.py
+victus_local/admin_credentials.json
 
 # Tooling
 .idea/

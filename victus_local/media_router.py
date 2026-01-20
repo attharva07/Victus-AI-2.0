@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import importlib.util
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
@@ -10,6 +11,24 @@ import requests
 
 
 PROVIDERS = {"spotify", "youtube"}
+
+
+def _load_spotify_credentials() -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    client_id = None
+    client_secret = None
+    refresh_token = None
+    spec = importlib.util.find_spec("victus_local.credentials")
+    if spec and spec.loader:
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        client_id = getattr(module, "SPOTIFY_CLIENT_ID", None) or None
+        client_secret = getattr(module, "SPOTIFY_CLIENT_SECRET", None) or None
+        refresh_token = getattr(module, "SPOTIFY_REFRESH_TOKEN", None) or None
+
+    client_id = client_id or os.getenv("SPOTIFY_CLIENT_ID")
+    client_secret = client_secret or os.getenv("SPOTIFY_CLIENT_SECRET")
+    refresh_token = refresh_token or os.getenv("SPOTIFY_REFRESH_TOKEN")
+    return client_id, client_secret, refresh_token
 
 
 @dataclass
@@ -24,11 +43,11 @@ class MediaAction:
 
 def parse_media_action(user_text: str) -> Optional[MediaAction]:
     normalized = user_text.strip()
-    match = re.match(r"^play\s+(?P<rest>.+)$", normalized, re.IGNORECASE)
+    match = re.match(r"^play(?:\s+(?P<rest>.+))?$", normalized, re.IGNORECASE)
     if not match:
         return None
 
-    rest = match.group("rest").strip()
+    rest = (match.group("rest") or "").strip()
     provider = None
     provider_explicit = False
     provider_match = re.search(r"\s+on\s+(youtube|spotify)\s*$", rest, re.IGNORECASE)
@@ -198,11 +217,9 @@ def search_spotify(query: str, artist: Optional[str], token: str) -> Tuple[Optio
 
 
 def get_spotify_access_token() -> Tuple[Optional[str], Optional[str]]:
-    client_id = os.getenv("SPOTIFY_CLIENT_ID")
-    client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
-    refresh_token = os.getenv("SPOTIFY_REFRESH_TOKEN")
+    client_id, client_secret, refresh_token = _load_spotify_credentials()
     if not client_id or not client_secret or not refresh_token:
-        return None, "Spotify credentials are not configured."
+        return None, "Spotify not configured."
 
     response = requests.post(
         "https://accounts.spotify.com/api/token",
@@ -230,7 +247,7 @@ def start_spotify_playback(track_uri: str, token: str) -> Tuple[bool, Optional[s
     active_device = next((device for device in devices if device.get("is_active")), None)
     device_id = (active_device or (devices[0] if devices else None) or {}).get("id")
     if not device_id:
-        return False, "No active Spotify device found. Open Spotify and start playback first."
+        return False, "No active Spotify device. Open Spotify desktop and play once."
 
     play_response = requests.put(
         "https://api.spotify.com/v1/me/player/play",
@@ -294,12 +311,13 @@ def run_media_play(args: Dict[str, Any]) -> Dict[str, Any]:
             0.1,
             ["Missing track query."],
         )
+        confidence["decision"] = "clarify"
         return {
             "action": action.action,
             "provider": action.provider,
             "query": action.query,
             "artist": action.artist,
-            "decision": confidence["decision"],
+            "decision": "clarify",
             "confidence": confidence,
             "assistant_message": "What would you like me to play?",
         }
@@ -312,7 +330,13 @@ def run_media_play(args: Dict[str, Any]) -> Dict[str, Any]:
     else:
         token, error = get_spotify_access_token()
         if error or not token:
-            return {"error": error or "Spotify access token missing."}
+            message = error or "Spotify not configured."
+            return {
+                "error": message,
+                "provider": action.provider,
+                "query": action.query,
+                "assistant_message": message,
+            }
         result, retrieval_conf, retrieval_reasons = search_spotify(action.query, action.artist, token)
 
     if not result:
@@ -363,12 +387,14 @@ def run_media_play(args: Dict[str, Any]) -> Dict[str, Any]:
 
     token, error = get_spotify_access_token()
     if error or not token:
-        response["error"] = error or "Spotify access token missing."
+        response["error"] = error or "Spotify not configured."
+        response["assistant_message"] = response["error"]
         return response
     ok, playback_error = start_spotify_playback(result["uri"], token)
     if not ok:
         response["error"] = playback_error or "Unable to start Spotify playback."
         response["error_code"] = _spotify_error_code(playback_error or "")
+        response["assistant_message"] = response["error"]
         return response
     response["now_playing"] = build_now_playing("spotify", result)
     return response
@@ -378,7 +404,7 @@ def run_media_stop(provider: str) -> Dict[str, Any]:
     if provider == "spotify":
         token, error = get_spotify_access_token()
         if error or not token:
-            return {"error": error or "Spotify access token missing."}
+            return {"error": error or "Spotify not configured."}
         ok, playback_error = pause_spotify_playback(token)
         if not ok:
             return {"error": playback_error or "Unable to stop Spotify playback."}

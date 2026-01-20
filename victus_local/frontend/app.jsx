@@ -34,6 +34,11 @@ function App() {
   const [audioActive, setAudioActive] = useState(false);
   const [visualHint, setVisualHint] = useState(null);
   const [nowPlaying, setNowPlaying] = useState(null);
+  const [policyState, setPolicyState] = useState(null);
+  const [policyError, setPolicyError] = useState(null);
+  const [adminPassword, setAdminPassword] = useState("");
+  const [adminStatus, setAdminStatus] = useState({ unlocked: false, expiresAt: null });
+  const [policySaving, setPolicySaving] = useState(false);
   const chatInputRef = useRef(null);
   const controllerRef = useRef(null);
   const logsSourceRef = useRef(null);
@@ -236,6 +241,11 @@ function App() {
       }
       return;
     }
+    if (eventType === "clarify") {
+      const message = payload.message || "Can you clarify what you want Victus to do?";
+      setMessages((prev) => [...prev, createMessage("Victus", message)]);
+      return;
+    }
     if (eventType === "tool_start") {
       appendLog("tool_start", {
         tool: payload.tool,
@@ -332,6 +342,95 @@ function App() {
     }
   };
 
+  const loadPolicy = async () => {
+    try {
+      const response = await fetch("/api/policy", { credentials: "include" });
+      if (!response.ok) {
+        throw new Error("Unable to load policy.");
+      }
+      const payload = await response.json();
+      setPolicyState(payload);
+      setAdminStatus({
+        unlocked: Boolean(payload?.admin?.unlocked),
+        expiresAt: payload?.admin?.expires_at || null,
+      });
+      setPolicyError(null);
+    } catch (error) {
+      setPolicyError("Unable to load policy.");
+    }
+  };
+
+  const updatePolicy = async (nextEnabled) => {
+    setPolicySaving(true);
+    try {
+      const response = await fetch("/api/policy", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ enabled_actions: nextEnabled }),
+      });
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || "Unable to update policy.");
+      }
+      const payload = await response.json();
+      setPolicyState(payload);
+      setPolicyError(null);
+    } catch (error) {
+      setPolicyError(error.message || "Unable to update policy.");
+    } finally {
+      setPolicySaving(false);
+    }
+  };
+
+  const handleUnlockAdmin = async () => {
+    if (!adminPassword) {
+      setPolicyError("Admin password is required.");
+      return;
+    }
+    try {
+      const response = await fetch("/api/admin/unlock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ password: adminPassword }),
+      });
+      if (!response.ok) {
+        throw new Error("Invalid admin password.");
+      }
+      const payload = await response.json();
+      setAdminStatus({ unlocked: true, expiresAt: payload.expires_at || null });
+      setPolicyError(null);
+      setAdminPassword("");
+      await loadPolicy();
+    } catch (error) {
+      setPolicyError(error.message || "Unable to unlock admin.");
+    }
+  };
+
+  const handleLockAdmin = async () => {
+    try {
+      await fetch("/api/admin/lock", { method: "POST", credentials: "include" });
+      setAdminStatus({ unlocked: false, expiresAt: null });
+      await loadPolicy();
+    } catch (error) {
+      setPolicyError("Unable to lock admin.");
+    }
+  };
+
+  const toggleAction = (action) => {
+    if (!policyState || !adminStatus.unlocked) {
+      return;
+    }
+    const enabled = new Set(policyState.enabled_actions || []);
+    if (enabled.has(action)) {
+      enabled.delete(action);
+    } else {
+      enabled.add(action);
+    }
+    updatePolicy(Array.from(enabled));
+  };
+
   const sendChat = async () => {
     const text = chatInputRef.current?.value?.trim();
     if (!text) {
@@ -391,6 +490,12 @@ function App() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
+
+  useEffect(() => {
+    if (activeTab === "Settings") {
+      loadPolicy();
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (logsSourceRef.current) {
@@ -524,6 +629,70 @@ function App() {
     );
   };
 
+  const renderSettings = () => {
+    const toggleable = policyState?.toggleable_actions || [];
+    const enabledActions = new Set(policyState?.enabled_actions || []);
+    return (
+      <div className="settings-content">
+        <section className="panel settings-panel">
+          <h2>Settings</h2>
+          <div className="settings-section">
+            <h3>Unlock Admin</h3>
+            <p className="settings-muted">
+              Admin access is required to change policy toggles. Default password is{" "}
+              <strong>victus</strong> unless configured.
+            </p>
+            <div className="settings-inline">
+              <input
+                type="password"
+                placeholder="Admin password"
+                value={adminPassword}
+                onChange={(event) => setAdminPassword(event.target.value)}
+              />
+              <button onClick={handleUnlockAdmin} disabled={!adminPassword}>
+                Unlock
+              </button>
+              <button className="secondary" onClick={handleLockAdmin} disabled={!adminStatus.unlocked}>
+                Lock
+              </button>
+            </div>
+            {adminStatus.unlocked && (
+              <p className="settings-muted">Admin unlocked {adminStatus.expiresAt ? `until ${adminStatus.expiresAt}` : ""}</p>
+            )}
+            {policyError && <p className="settings-error">{policyError}</p>}
+          </div>
+
+          <div className="settings-section">
+            <h3>Policy</h3>
+            {!adminStatus.unlocked && <p className="settings-muted">Unlock admin to edit.</p>}
+            {policySaving && <p className="settings-muted">Saving policy changes…</p>}
+            {!toggleable.length ? (
+              <p className="settings-muted">No toggleable actions available.</p>
+            ) : (
+              <div className="policy-list">
+                {toggleable.map((entry) => {
+                  const action = entry.action || entry;
+                  const enabled = entry.enabled ?? enabledActions.has(action);
+                  return (
+                    <label className="policy-toggle" key={action}>
+                      <input
+                        type="checkbox"
+                        checked={enabled}
+                        disabled={!adminStatus.unlocked || policySaving}
+                        onChange={() => toggleAction(action)}
+                      />
+                      <span>{action}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+    );
+  };
+
   return (
     <div>
       <nav className="top-nav">
@@ -547,116 +716,120 @@ function App() {
         </div>
       </nav>
 
-      <div className="app-shell">
-        <div className="row primary">
-          <section className="panel conversation-panel">
-            <h2>Conversation</h2>
-            <div className="chat-output">
-              {messages.map((message) => (
-                <div className="chat-message" key={message.id}>
-                  <strong>{message.role}:</strong> {message.text}
-                </div>
-              ))}
-            </div>
-            <div className="chat-input">
-              <textarea
-                ref={chatInputRef}
-                rows="3"
-                placeholder="Ask or command Victus..."
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    sendChat();
-                  }
-                }}
-              ></textarea>
-              <div className="chat-actions">
-                <button onClick={sendChat} disabled={isStreaming}>
-                  Send
-                </button>
-                <button className="secondary" onClick={stopStreaming} disabled={!isStreaming}>
-                  Stop
-                </button>
-              </div>
-            </div>
-          </section>
-
-          <section className="panel sphere-panel">
-            <h2>Sphere</h2>
-            <VictusSphere audioActive={audioActive} visualHint={visualHint} sphereState={sphereState} />
-            <div className="sphere-overlay">Three.js · Audio reactive</div>
-          </section>
-
-          <aside className="panel logs-panel">
-            <h2>Live Logs</h2>
-            <div className="logs-output">
-              {logs.length === 0 ? (
-                <div className="log-entry">
-                  <span>Awaiting events</span>
-                  <div>Logs will stream in real time.</div>
-                </div>
-              ) : (
-                logs.map((log) => (
-                  <div className="log-entry" key={log.id}>
-                    <span>
-                      {log.timestamp.toLocaleTimeString()} · {log.event}
-                    </span>
-                    <div>{JSON.stringify(log.data)}</div>
+      {activeTab === "Settings" ? (
+        <div className="app-shell settings-shell">{renderSettings()}</div>
+      ) : (
+        <div className="app-shell">
+          <div className="row primary">
+            <section className="panel conversation-panel">
+              <h2>Conversation</h2>
+              <div className="chat-output">
+                {messages.map((message) => (
+                  <div className="chat-message" key={message.id}>
+                    <strong>{message.role}:</strong> {message.text}
                   </div>
-                ))
-              )}
-            </div>
-          </aside>
-        </div>
+                ))}
+              </div>
+              <div className="chat-input">
+                <textarea
+                  ref={chatInputRef}
+                  rows="3"
+                  placeholder="Ask or command Victus..."
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      sendChat();
+                    }
+                  }}
+                ></textarea>
+                <div className="chat-actions">
+                  <button onClick={sendChat} disabled={isStreaming}>
+                    Send
+                  </button>
+                  <button className="secondary" onClick={stopStreaming} disabled={!isStreaming}>
+                    Stop
+                  </button>
+                </div>
+              </div>
+            </section>
 
-        <div className="row secondary">
-          <section className="panel dynamic-module">
-            <h2>Dynamic Module</h2>
-            <div className="placeholder-pill">{activeTab} view</div>
-            {renderDynamicModule()}
-          </section>
+            <section className="panel sphere-panel">
+              <h2>Sphere</h2>
+              <VictusSphere audioActive={audioActive} visualHint={visualHint} sphereState={sphereState} />
+              <div className="sphere-overlay">Three.js · Audio reactive</div>
+            </section>
 
-          <aside className="panel activity-panel">
-            <h2>Recent Activity</h2>
-            <div className="activity-section">
-              <h3>Live Telemetry</h3>
-              <ul>
-                {recentLogs.length ? (
-                  recentLogs.map((log) => (
-                    <li key={log.id}>
-                      {log.event} · {log.timestamp.toLocaleTimeString()}
-                    </li>
-                  ))
+            <aside className="panel logs-panel">
+              <h2>Live Logs</h2>
+              <div className="logs-output">
+                {logs.length === 0 ? (
+                  <div className="log-entry">
+                    <span>Awaiting events</span>
+                    <div>Logs will stream in real time.</div>
+                  </div>
                 ) : (
-                  <li>Waiting for activity events.</li>
-                )}
-              </ul>
-            </div>
-            <div className="activity-section">
-              <h3>Chat History</h3>
-              <ul>
-                {recentMessages.length ? (
-                  recentMessages.map((message) => (
-                    <li key={message.id}>
-                      <strong>{message.role}:</strong> {message.text}
-                    </li>
+                  logs.map((log) => (
+                    <div className="log-entry" key={log.id}>
+                      <span>
+                        {log.timestamp.toLocaleTimeString()} · {log.event}
+                      </span>
+                      <div>{JSON.stringify(log.data)}</div>
+                    </div>
                   ))
-                ) : (
-                  <li>No chat history yet.</li>
                 )}
-              </ul>
-            </div>
-            <div className="activity-section">
-              <h3>Reminders</h3>
-              <ul>
-                <li>Memory + finance modules will appear here when enabled.</li>
-              </ul>
-            </div>
-          </aside>
-        </div>
+              </div>
+            </aside>
+          </div>
 
-        <div className="footer-note">UI Build: victus-react-sphere-1</div>
-      </div>
+          <div className="row secondary">
+            <section className="panel dynamic-module">
+              <h2>Dynamic Module</h2>
+              <div className="placeholder-pill">{activeTab} view</div>
+              {renderDynamicModule()}
+            </section>
+
+            <aside className="panel activity-panel">
+              <h2>Recent Activity</h2>
+              <div className="activity-section">
+                <h3>Live Telemetry</h3>
+                <ul>
+                  {recentLogs.length ? (
+                    recentLogs.map((log) => (
+                      <li key={log.id}>
+                        {log.event} · {log.timestamp.toLocaleTimeString()}
+                      </li>
+                    ))
+                  ) : (
+                    <li>Waiting for activity events.</li>
+                  )}
+                </ul>
+              </div>
+              <div className="activity-section">
+                <h3>Chat History</h3>
+                <ul>
+                  {recentMessages.length ? (
+                    recentMessages.map((message) => (
+                      <li key={message.id}>
+                        <strong>{message.role}:</strong> {message.text}
+                      </li>
+                    ))
+                  ) : (
+                    <li>No chat history yet.</li>
+                  )}
+                </ul>
+              </div>
+              <div className="activity-section">
+                <h3>Reminders</h3>
+                <ul>
+                  <li>Memory + finance modules will appear here when enabled.</li>
+                </ul>
+              </div>
+            </aside>
+          </div>
+
+          <div className="footer-note">UI Build: victus-react-sphere-1</div>
+        </div>
+      )}
     </div>
   );
 }

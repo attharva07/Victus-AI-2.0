@@ -94,7 +94,13 @@ class ConfidenceEngine:
             required_present,
             missing_fields,
         )
-        retrieval_conf, retrieval_reasons = self._score_retrieval_conf(parse_conf, parsed_intent, spec)
+        retrieval_conf, retrieval_reasons = self._score_retrieval_conf(
+            parse_conf,
+            parsed_intent,
+            spec,
+            required_present,
+            missing_fields,
+        )
         final_conf = _clamp(0.6 * parse_conf + 0.4 * retrieval_conf)
         decision = _decision_for(final_conf)
 
@@ -181,13 +187,15 @@ class ConfidenceEngine:
         else:
             reasons.append(f"missing required fields: {', '.join(missing_fields)}")
 
-        if spec:
+        if spec and required_present:
             score += 0.20
             reasons.append("provider specified or defaulted")
+        elif spec:
+            reasons.append("provider deferred until required fields present")
         else:
             reasons.append("provider missing")
 
-        if spec and spec.optional_fields:
+        if spec and spec.optional_fields and required_present:
             if any(_is_field_present(args.get(field_name)) for field_name in spec.optional_fields):
                 score += 0.10
                 reasons.append("optional clarity present")
@@ -201,8 +209,13 @@ class ConfidenceEngine:
         parse_conf: float,
         parsed_intent: ParsedIntent,
         spec: IntentSpec | None,
+        required_present: bool,
+        missing_fields: Iterable[str],
     ) -> Tuple[float, List[str]]:
         reasons: List[str] = []
+        if not required_present and list(missing_fields):
+            reasons.append("missing required fields; retrieval skipped")
+            return parse_conf, reasons
         if parse_conf < 0.4:
             reasons.append("parse confidence below retrieval threshold")
             return parse_conf, reasons
@@ -228,6 +241,7 @@ class ConfidenceEngine:
 
 _FIELD_QUESTIONS = {
     "track": "What track should I play?",
+    "query": "What track should I play?",
     "artist": "Which artist should I use?",
     "to": "Who should I email?",
     "subject": "What is the email subject?",
@@ -251,6 +265,17 @@ _INTENT_SPECS: Dict[Tuple[str, str], IntentSpec] = {
         provider="spotify",
         query_field="track",
         artist_field="artist",
+    ),
+    ("local", "media_play"): IntentSpec(
+        intent="media.play",
+        required_fields=("query",),
+        optional_fields=("artist",),
+        query_field="query",
+        artist_field="artist",
+    ),
+    ("local", "media_stop"): IntentSpec(
+        intent="media.stop",
+        optional_fields=("provider",),
     ),
     ("system", "status"): IntentSpec(intent="system.status", optional_fields=("focus",)),
     ("system", "net_snapshot"): IntentSpec(intent="system.net_snapshot", optional_fields=("detail",)),

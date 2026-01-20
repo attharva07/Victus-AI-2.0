@@ -1,0 +1,30 @@
+{
+  "enabled_actions": [
+    "docs.create",
+    "finance.add_transaction",
+    "finance.export_logbook_md",
+    "finance.list_transactions",
+    "finance.month_summary",
+    "gmail.send",
+    "local.media_play",
+    "local.media_stop",
+    "local.open_app",
+    "local.open_youtube",
+    "openai.draft",
+    "openai.draft_email",
+    "openai.generate_text",
+    "openai.outline",
+    "openai.summarize",
+    "openai.summarize_text",
+    "spotify.play",
+    "system.access_overview",
+    "system.bt_status",
+    "system.exposure_snapshot",
+    "system.local_devices",
+    "system.net_connections",
+    "system.net_snapshot",
+    "system.open_app",
+    "system.status"
+  ],
+  "updated_at": "2024-01-01T00:00:00Z"
+}

@@ -14,8 +14,10 @@ from pydantic import BaseModel
 
 from victus.app import VictusApp
 from victus.core.schemas import TurnEvent
+from .admin_auth import AdminAuthManager
 from .media_router import run_media_stop
 from .memory_store_v2 import VictusMemory, VictusMemoryStore
+from .policy_store import PolicyStore
 from .turn_handler import TurnHandler
 from .victus_adapter import build_victus_app
 
@@ -95,6 +97,9 @@ log_hub = LogHub()
 static_dir = Path(__file__).parent / "frontend"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 victus_app = build_victus_app()
+policy_store = PolicyStore()
+victus_app.policy_engine.allowlist = policy_store.build_effective_allowlist()
+admin_auth = AdminAuthManager()
 memory_store_v2 = VictusMemoryStore()
 turn_handler = TurnHandler(victus_app, memory_store_v2=memory_store_v2)
 
@@ -121,6 +126,14 @@ class MemoryResponse(BaseModel):
 
 class MediaStopRequest(BaseModel):
     provider: str = "spotify"
+
+
+class PolicyUpdateRequest(BaseModel):
+    enabled_actions: list[str]
+
+
+class AdminUnlockRequest(BaseModel):
+    password: str
 
 
 @app.on_event("startup")
@@ -192,6 +205,61 @@ async def media_stop(payload: MediaStopRequest = Body(...)) -> Dict[str, Any]:
     if result.get("error"):
         raise HTTPException(status_code=400, detail=result["error"])
     return result
+
+
+@app.get("/api/policy")
+async def get_policy(request: Request) -> Dict[str, Any]:
+    token = request.cookies.get("victus_admin")
+    state = policy_store.get_state()
+    return {
+        **state.as_response(),
+        "admin": {"unlocked": admin_auth.is_session_valid(token)},
+    }
+
+
+@app.put("/api/policy")
+async def update_policy(request: Request, payload: PolicyUpdateRequest = Body(...)) -> Dict[str, Any]:
+    token = request.cookies.get("victus_admin")
+    if not admin_auth.is_session_valid(token):
+        raise HTTPException(status_code=401, detail="Admin access required.")
+    state, enabled, disabled = policy_store.update_enabled_actions(payload.enabled_actions)
+    victus_app.policy_engine.allowlist = policy_store.build_effective_allowlist()
+    if enabled or disabled:
+        logger.info("Policy updated. Enabled: %s Disabled: %s", enabled, disabled)
+        await log_hub.emit(
+            "info",
+            "policy_update",
+            {"enabled": enabled, "disabled": disabled, "updated_at": state.updated_at},
+        )
+    return state.as_response()
+
+
+@app.post("/api/admin/unlock")
+async def unlock_admin(payload: AdminUnlockRequest = Body(...)) -> JSONResponse:
+    if not admin_auth.verify_password(payload.password):
+        raise HTTPException(status_code=401, detail="Invalid admin password.")
+    token, expires_at = admin_auth.issue_session()
+    response = JSONResponse(
+        status_code=200,
+        content={"status": "unlocked", "expires_at": expires_at.isoformat() + "Z"},
+    )
+    response.set_cookie(
+        "victus_admin",
+        token,
+        httponly=True,
+        max_age=int(admin_auth.ttl.total_seconds()),
+        samesite="lax",
+    )
+    return response
+
+
+@app.post("/api/admin/lock")
+async def lock_admin(request: Request) -> JSONResponse:
+    token = request.cookies.get("victus_admin")
+    admin_auth.revoke_session(token)
+    response = JSONResponse(status_code=200, content={"status": "locked"})
+    response.delete_cookie("victus_admin")
+    return response
 
 
 @app.delete("/memory/{memory_id}")

@@ -28,7 +28,6 @@ function App() {
   const [activeTab, setActiveTab] = useState("Home");
   const [status, setStatus] = useState({ label: "Connected", state: "connected" });
   const [messages, setMessages] = useState([]);
-  const [streamingText, setStreamingText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [logs, setLogs] = useState([]);
   const [sphereState, setSphereState] = useState("idle");
@@ -39,6 +38,8 @@ function App() {
   const logsSourceRef = useRef(null);
   const streamingLengthRef = useRef(0);
   const streamingTextRef = useRef("");
+  const currentAssistantIdRef = useRef(null);
+  const logDedupRef = useRef(new Map());
   const statusRef = useRef(status);
   const pendingVisualHintRef = useRef(null);
 
@@ -48,6 +49,27 @@ function App() {
   }, []);
 
   const appendLog = (event, data = {}) => {
+    const now = Date.now();
+    const cleanupBefore = now - 5000;
+    logDedupRef.current.forEach((timestamp, key) => {
+      if (timestamp < cleanupBefore) {
+        logDedupRef.current.delete(key);
+      }
+    });
+
+    const eventId = data?.event_id;
+    const bucket = Math.floor(now / 1000);
+    const keyMessage = data?.message || data?.status || data?.tool || "";
+    const keyAction = data?.action ? `:${data.action}` : "";
+    const dedupKey = eventId
+      ? `id:${eventId}`
+      : `hash:${event}:${keyMessage}${keyAction}:${bucket}`;
+
+    if (logDedupRef.current.has(dedupKey)) {
+      return;
+    }
+    logDedupRef.current.set(dedupKey, now);
+
     setLogs((prev) => [
       ...prev,
       {
@@ -89,23 +111,49 @@ function App() {
     }
   };
 
+  const createMessageId = () =>
+    `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  const createMessage = (role, text, extra = {}) => ({
+    id: createMessageId(),
+    role,
+    text,
+    ...extra,
+  });
+
   const beginStream = () => {
-    setStreamingText("");
     streamingTextRef.current = "";
     setIsStreaming(true);
     streamingLengthRef.current = 0;
     pendingVisualHintRef.current = null;
     setSphereState("thinking");
+    const messageId = createMessageId();
+    currentAssistantIdRef.current = messageId;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: messageId,
+        role: "Victus",
+        text: "",
+        status: "streaming",
+      },
+    ]);
   };
 
   const endStream = () => {
     setIsStreaming(false);
-    if (streamingTextRef.current.trim()) {
-      setMessages((prev) => [...prev, { role: "Victus", text: streamingTextRef.current }]);
+    const assistantId = currentAssistantIdRef.current;
+    if (assistantId) {
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === assistantId
+            ? { ...message, status: "done" }
+            : message
+        )
+      );
     }
-    setStreamingText("");
-    streamingTextRef.current = "";
     setSphereState("idle");
+    currentAssistantIdRef.current = null;
 
     if (
       pendingVisualHintRef.current &&
@@ -126,8 +174,17 @@ function App() {
     setStatusState("Connected", "connected");
     setSphereState("idle");
     setIsStreaming(false);
-    setStreamingText("");
-    streamingTextRef.current = "";
+    const assistantId = currentAssistantIdRef.current;
+    if (assistantId) {
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === assistantId
+            ? { ...message, status: "stopped" }
+            : message
+        )
+      );
+    }
+    currentAssistantIdRef.current = null;
     pendingVisualHintRef.current = null;
     streamingLengthRef.current = 0;
   };
@@ -139,19 +196,40 @@ function App() {
     if (payload?.visual_hint) {
       pendingVisualHintRef.current = payload.visual_hint;
     }
-    if (eventType === "status") {
+    if (eventType === "status" || eventType === "status_update") {
       setStatusFromServer(payload.status);
-      appendLog("status", { status: payload.status });
+      appendLog("status_update", { status: payload.status, event_id: payload.event_id });
       return;
     }
     if (eventType === "token") {
       const chunk = payload.text ?? payload.token ?? "";
       if (chunk) {
         streamingLengthRef.current += chunk.length;
-        setStreamingText((prev) => {
-          const nextText = `${prev}${chunk}`;
-          streamingTextRef.current = nextText;
-          return nextText;
+        const assistantId = currentAssistantIdRef.current;
+        setMessages((prev) => {
+          let found = false;
+          const next = prev.map((message) => {
+            if (message.id === assistantId) {
+              found = true;
+              const nextText = `${message.text}${chunk}`;
+              streamingTextRef.current = nextText;
+              return { ...message, text: nextText };
+            }
+            return message;
+          });
+          if (!found) {
+            const messageId = assistantId || createMessageId();
+            currentAssistantIdRef.current = messageId;
+            const nextText = `${chunk}`;
+            streamingTextRef.current = nextText;
+            next.push({
+              id: messageId,
+              role: "Victus",
+              text: nextText,
+              status: "streaming",
+            });
+          }
+          return next;
         });
         setSphereState("streaming");
       }
@@ -162,6 +240,7 @@ function App() {
         tool: payload.tool,
         action: payload.action,
         args: payload.args,
+        event_id: payload.event_id,
       });
       return;
     }
@@ -170,13 +249,14 @@ function App() {
         tool: payload.tool,
         action: payload.action,
         result: payload.result,
+        event_id: payload.event_id,
       });
       return;
     }
     if (eventType === "error") {
       const message = payload.message || "Request failed.";
-      appendLog("error", { message });
-      setMessages((prev) => [...prev, { role: "Victus", text: message }]);
+      appendLog("error", { message, event_id: payload.event_id });
+      setMessages((prev) => [...prev, createMessage("Victus", message)]);
       setStatusState("Error", "error");
       setSphereState("error");
     }
@@ -244,7 +324,7 @@ function App() {
       return;
     }
 
-    setMessages((prev) => [...prev, { role: "You", text }]);
+    setMessages((prev) => [...prev, createMessage("You", text)]);
     chatInputRef.current.value = "";
     setStatusState("Thinking", "busy");
     beginStream();
@@ -264,7 +344,7 @@ function App() {
         const errorText = await response.text();
         setMessages((prev) => [
           ...prev,
-          { role: "Victus", text: errorText || "Error retrieving response." },
+          createMessage("Victus", errorText || "Error retrieving response."),
         ]);
         setStatusState("Error", "error");
         return;
@@ -278,7 +358,7 @@ function App() {
       }
       setMessages((prev) => [
         ...prev,
-        { role: "Victus", text: "Network error while contacting server." },
+        createMessage("Victus", "Network error while contacting server."),
       ]);
       setStatusState("Error", "error");
       setSphereState("error");
@@ -313,10 +393,11 @@ function App() {
     source.onmessage = (event) => {
       try {
         const entry = JSON.parse(event.data);
-        if (["status_update", "tool_start", "tool_done", "turn_error"].includes(entry.event)) {
-          appendLog(entry.event, entry.data || {});
+        const normalizedEvent = entry.event === "status" ? "status_update" : entry.event;
+        if (["status_update", "tool_start", "tool_done", "turn_error"].includes(normalizedEvent)) {
+          appendLog(normalizedEvent, entry.data || {});
         }
-        if (entry.event === "status_update") {
+        if (normalizedEvent === "status_update") {
           setStatusFromServer(entry.data.status);
         }
       } catch (error) {
@@ -346,7 +427,7 @@ function App() {
             <ul>
               {recentMessages.length ? (
                 recentMessages.map((message) => (
-                  <li key={`${message.role}-${message.text}`}>
+                  <li key={message.id}>
                     <strong>{message.role}:</strong> {message.text}
                   </li>
                 ))
@@ -404,16 +485,11 @@ function App() {
           <section className="panel conversation-panel">
             <h2>Conversation</h2>
             <div className="chat-output">
-              {messages.map((message, index) => (
-                <div className="chat-message" key={`${message.role}-${index}`}>
+              {messages.map((message) => (
+                <div className="chat-message" key={message.id}>
                   <strong>{message.role}:</strong> {message.text}
                 </div>
               ))}
-              {isStreaming && (
-                <div className="chat-message">
-                  <strong>Victus:</strong> {streamingText}
-                </div>
-              )}
             </div>
             <div className="chat-input">
               <textarea
@@ -493,8 +569,8 @@ function App() {
               <h3>Chat History</h3>
               <ul>
                 {recentMessages.length ? (
-                  recentMessages.map((message, index) => (
-                    <li key={`${message.role}-${index}`}>
+                  recentMessages.map((message) => (
+                    <li key={message.id}>
                       <strong>{message.role}:</strong> {message.text}
                     </li>
                   ))

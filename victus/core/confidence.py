@@ -103,6 +103,8 @@ class ConfidenceEngine:
         )
         final_conf = _clamp(0.6 * parse_conf + 0.4 * retrieval_conf)
         decision = _decision_for(final_conf)
+        if spec and missing_fields and not required_present:
+            decision = "clarify"
 
         reasons = parse_reasons + retrieval_reasons
         if not reasons:
@@ -186,6 +188,7 @@ class ConfidenceEngine:
             reasons.append("required fields present")
         else:
             reasons.append(f"missing required fields: {', '.join(missing_fields)}")
+            reasons.append("missing required fields; clarification required")
 
         if spec and required_present:
             score += 0.20
@@ -201,6 +204,9 @@ class ConfidenceEngine:
                 reasons.append("optional clarity present")
             else:
                 reasons.append("optional clarity missing")
+
+        if not required_present:
+            score = min(score, 0.34)
 
         return _clamp(score), reasons
 

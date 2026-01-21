@@ -5,6 +5,7 @@ from typing import Dict, List
 from openai import OpenAI
 
 from ....config.runtime import get_openai_api_key, require_openai_api_key
+from ....core.llm_health import get_llm_request_timeout
 from ....core.schemas import ExecutionError
 from .llm_base import LLMClientBase
 
@@ -17,7 +18,7 @@ class OpenAIClientReal(LLMClientBase):
         if not self.api_key:
             self.api_key = require_openai_api_key()
 
-        self.client = OpenAI(api_key=self.api_key)
+        self.client = OpenAI(api_key=self.api_key, timeout=get_llm_request_timeout())
 
     def _chat_completion(self, messages) -> str:
         try:

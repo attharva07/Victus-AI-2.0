@@ -27,6 +27,7 @@ const LONG_RESPONSE_THRESHOLD = 240;
 function App() {
   const [activeTab, setActiveTab] = useState("Home");
   const [status, setStatus] = useState({ label: "Connected", state: "connected" });
+  const [llmStatus, setLlmStatus] = useState({ state: "CLOSED", available: true });
   const [messages, setMessages] = useState([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [logs, setLogs] = useState([]);
@@ -360,6 +361,23 @@ function App() {
     }
   };
 
+  const loadStatus = async () => {
+    try {
+      const response = await fetch("/api/status");
+      if (!response.ok) {
+        throw new Error("Unable to load status.");
+      }
+      const payload = await response.json();
+      setLlmStatus({
+        state: payload.llm_state || "CLOSED",
+        available: Boolean(payload.llm_available),
+        lastError: payload.last_error || null,
+      });
+    } catch (error) {
+      setLlmStatus((prev) => ({ ...prev, available: false, state: prev.state || "OPEN" }));
+    }
+  };
+
   const updatePolicy = async (nextEnabled) => {
     setPolicySaving(true);
     try {
@@ -489,6 +507,12 @@ function App() {
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    loadStatus();
+    const interval = setInterval(loadStatus, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -711,7 +735,11 @@ function App() {
         <div className="nav-right">
           <span>Status</span>
           <span className={`status-pill ${status.state === "busy" ? "busy" : ""} ${status.state === "error" ? "error" : ""}`}>
-            {status.label}
+            {status.state === "connected"
+              ? llmStatus.state === "CLOSED"
+                ? "Connected (LLM OK)"
+                : "Connected (Limited Mode)"
+              : status.label}
           </span>
         </div>
       </nav>

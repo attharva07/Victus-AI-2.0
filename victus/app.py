@@ -18,6 +18,7 @@ from .core.approval import issue_approval
 from .core.audit import AuditLogger
 from .core.confidence import ConfidenceEngine, ConfidenceLogger, ConfidencePlanEvaluation
 from .core.failures import FailureEvent, FailureLogger, hash_stack, safe_user_intent
+from .core.llm_health import get_llm_circuit_breaker
 from .core.executor import ExecutionEngine
 from .core.planner import Planner
 from .core.policy import PolicyEngine
@@ -112,6 +113,7 @@ class VictusApp:
 
         plan: Plan | None = None
         intent_plan: IntentPlan | None = None
+        breaker = get_llm_circuit_breaker()
         try:
             if self.rule_router:
                 plan = self.rule_router(message, active_context)
@@ -119,6 +121,10 @@ class VictusApp:
                 plan = self.router.map_intent_to_plan(message)
 
             if plan is None and self.intent_planner:
+                if not breaker.allow_request():
+                    async for event in self._limited_mode_response():
+                        yield event
+                    return
                 intent_plan = await self._resolve_intent_plan(message, active_context)
 
             if plan is None and intent_plan:
@@ -142,6 +148,10 @@ class VictusApp:
                     return
 
             if plan is None:
+                if not breaker.allow_request():
+                    async for event in self._limited_mode_response():
+                        yield event
+                    return
                 plan_steps = steps or [
                     PlanStep(
                         id="openai-1",
@@ -152,6 +162,11 @@ class VictusApp:
                 ]
                 plan_domain = domain or "productivity"
                 plan = self.build_plan(goal=message, domain=plan_domain, steps=plan_steps)
+
+            if self._plan_requires_llm(plan) and not breaker.allow_request():
+                async for event in self._limited_mode_response():
+                    yield event
+                return
 
             if memory_prompt:
                 for step in plan.steps:
@@ -274,11 +289,16 @@ class VictusApp:
         """Run the full request lifecycle and record an audit entry."""
 
         try:
+            breaker = get_llm_circuit_breaker()
             routed = self.router.route(user_input, context)
             if routed.plan:
                 plan = routed.plan
             else:
+                if not breaker.allow_request():
+                    return {"error": "llm_unavailable", "message": self._limited_mode_message()}
                 plan = self.build_plan(goal=user_input, domain=domain, steps=steps)
+            if self._plan_requires_llm(plan) and not breaker.allow_request():
+                return {"error": "llm_unavailable", "message": self._limited_mode_message()}
             confidence = self._evaluate_confidence(plan)
             if confidence.decision == "clarify":
                 return {"error": "clarify", "message": self.confidence_engine.build_clarification(confidence.primary)}
@@ -318,11 +338,16 @@ class VictusApp:
         """
 
         try:
+            breaker = get_llm_circuit_breaker()
             routed = self.router.route(user_input, context)
             if routed.plan:
                 plan = routed.plan
             else:
+                if not breaker.allow_request():
+                    return {"error": "llm_unavailable", "message": self._limited_mode_message()}
                 plan = self.build_plan(goal=user_input, domain=domain, steps=steps)
+            if self._plan_requires_llm(plan) and not breaker.allow_request():
+                return {"error": "llm_unavailable", "message": self._limited_mode_message()}
             confidence = self._evaluate_confidence(plan)
             if confidence.decision == "clarify":
                 return {"error": "clarify", "message": self.confidence_engine.build_clarification(confidence.primary)}
@@ -443,3 +468,15 @@ class VictusApp:
         if evaluation.decision == "execute":
             return self.confidence_engine.build_execute_message(evaluation.primary)
         return None
+
+    @staticmethod
+    def _plan_requires_llm(plan: Plan) -> bool:
+        return any(step.tool == "openai" for step in plan.steps)
+
+    @staticmethod
+    def _limited_mode_message() -> str:
+        return "LLM is unavailable (limited mode). Try a direct command (e.g., 'open calculator')."
+
+    async def _limited_mode_response(self) -> AsyncIterator[TurnEvent]:
+        yield TurnEvent(event="status", status="done")
+        yield TurnEvent(event="token", token=self._limited_mode_message())

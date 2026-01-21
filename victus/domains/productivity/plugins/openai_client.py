@@ -10,8 +10,11 @@ from ....config.runtime import (
     get_ollama_model,
     is_openai_configured,
 )
+from ....core.llm_health import get_llm_circuit_breaker
 from ....core.schemas import Approval, ExecutionError
 from .llm_base import LLMClientBase
+
+LIMITED_MODE_MESSAGE = "LLM is unavailable (limited mode). Try a direct command (e.g., 'open calculator')."
 
 
 class OpenAIClientStub(LLMClientBase):
@@ -94,16 +97,24 @@ class OpenAIClientPlugin(BasePlugin):
         if not approval.policy_signature:
             raise ExecutionError("Missing policy signature")
 
+        breaker = get_llm_circuit_breaker()
+        if not breaker.allow_request():
+            return {"assistant_message": LIMITED_MODE_MESSAGE}
+
         if action in {"draft", "generate_text"}:
-            return self.client.generate_text(prompt=args.get("prompt", ""))
+            return self._call_with_breaker(self.client.generate_text, breaker, prompt=args.get("prompt", ""))
         if action == "draft_email":
-            return self.client.draft_email(
-                to=args.get("to", ""), subject=args.get("subject", ""), body=args.get("body", "")
+            return self._call_with_breaker(
+                self.client.draft_email,
+                breaker,
+                to=args.get("to", ""),
+                subject=args.get("subject", ""),
+                body=args.get("body", ""),
             )
         if action in {"summarize", "summarize_text"}:
-            return self.client.summarize(text=args.get("text", ""))
+            return self._call_with_breaker(self.client.summarize, breaker, text=args.get("text", ""))
         if action == "outline":
-            return self.client.outline(topic=args.get("topic", ""))
+            return self._call_with_breaker(self.client.outline, breaker, topic=args.get("topic", ""))
         raise ExecutionError(f"Unknown openai action '{action}'")
 
     def stream_execute(
@@ -118,25 +129,44 @@ class OpenAIClientPlugin(BasePlugin):
         if not approval.policy_signature:
             raise ExecutionError("Missing policy signature")
 
+        breaker = get_llm_circuit_breaker()
+        if not breaker.allow_request():
+            return {"assistant_message": LIMITED_MODE_MESSAGE}
+
         if action in {"draft", "generate_text"}:
             stream_fn = getattr(self.client, "stream_generate_text", None)
-            if callable(stream_fn):
-                content = stream_fn(
-                    prompt=args.get("prompt", ""),
-                    on_chunk=on_chunk,
-                    should_stop=should_stop,
-                )
-            else:
-                content = self.client.generate_text(prompt=args.get("prompt", ""))["content"]
-                if on_chunk:
-                    chunk_size = 48
-                    for idx in range(0, len(content), chunk_size):
-                        if should_stop and should_stop():
-                            break
-                        on_chunk(content[idx : idx + chunk_size])
+            try:
+                if callable(stream_fn):
+                    content = stream_fn(
+                        prompt=args.get("prompt", ""),
+                        on_chunk=on_chunk,
+                        should_stop=should_stop,
+                    )
+                else:
+                    content = self.client.generate_text(prompt=args.get("prompt", ""))["content"]
+                    if on_chunk:
+                        chunk_size = 48
+                        for idx in range(0, len(content), chunk_size):
+                            if should_stop and should_stop():
+                                break
+                            on_chunk(content[idx : idx + chunk_size])
+            except Exception as exc:  # noqa: BLE001
+                breaker.record_failure(exc)
+                raise
+            breaker.record_success()
             return {"action": "generate_text", "content": content}
 
         return self.execute(action, args, approval)
+
+    @staticmethod
+    def _call_with_breaker(func: Callable[..., Any], breaker, **kwargs: Any) -> Any:
+        try:
+            result = func(**kwargs)
+        except Exception as exc:  # noqa: BLE001
+            breaker.record_failure(exc)
+            raise
+        breaker.record_success()
+        return result
 
     @staticmethod
     def _running_tests() -> bool:

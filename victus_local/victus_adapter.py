@@ -10,6 +10,7 @@ from victus.app import VictusApp
 from victus.core.intent_router import route_intent
 from victus.core.schemas import Context, IntentPlan, Plan, PlanStep, PrivacySettings
 from victus.core.safety_filter import SafetyFilter
+from victus.core.llm_health import get_llm_circuit_breaker
 from victus.domains.productivity.allowlisted_plugins import (
     DocsPlugin,
     GmailPlugin,
@@ -139,6 +140,9 @@ class LocalIntentPlanner:
         self.client = client
 
     async def __call__(self, user_text: str, _context: Context) -> Optional[IntentPlan]:
+        breaker = get_llm_circuit_breaker()
+        if not breaker.allow_request():
+            return None
         prompt = (
             "You are an intent planner for a local desktop assistant. "
             "Decide if the user wants a tool action or a chat response. "
@@ -154,8 +158,10 @@ class LocalIntentPlanner:
         )
         try:
             response = await asyncio.to_thread(self.client.generate_text, prompt=prompt)
-        except Exception:
+        except Exception as exc:
+            breaker.record_failure(exc)
             return None
+        breaker.record_success()
         content = response.get("content", "") if isinstance(response, dict) else ""
         data = _safe_json_extract(content)
         if not data:

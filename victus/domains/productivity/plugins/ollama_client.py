@@ -6,6 +6,7 @@ from typing import Callable, Dict, List, Optional
 import requests
 
 from ....config.runtime import get_ollama_base_url, get_ollama_model
+from ....core.llm_health import get_llm_request_timeout
 from ....core.schemas import ExecutionError
 from .llm_base import LLMClientBase
 
@@ -29,11 +30,12 @@ class OllamaClient(LLMClientBase):
         chunks: list[str] = []
         callback = on_chunk or (lambda chunk: None)
         try:
+            timeout = get_llm_request_timeout()
             response = requests.post(
                 url,
                 json=payload,
                 stream=True,
-                timeout=(10, None),
+                timeout=(timeout, timeout),
             )
         except requests.RequestException as exc:  # pragma: no cover - network dependency
             raise ExecutionError(f"Ollama request failed: {exc}") from exc

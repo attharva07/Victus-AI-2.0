@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from victus.app import VictusApp
+from victus.core.llm_health import get_llm_circuit_breaker
 from victus.core.schemas import TurnEvent
 from .admin_auth import AdminAuthManager
 from .media_router import run_media_stop
@@ -300,6 +301,18 @@ async def list_routes() -> Dict[str, Any]:
         methods = sorted(getattr(route, "methods", []) or [])
         routes.append({"path": route.path, "methods": methods})
     return {"routes": routes}
+
+
+@app.get("/api/status")
+async def status_endpoint() -> Dict[str, Any]:
+    breaker = get_llm_circuit_breaker()
+    status = breaker.status()
+    return {
+        "llm_available": status.state == "CLOSED",
+        "llm_state": status.state,
+        "last_error": status.last_error,
+        "next_retry_at": status.next_retry_at,
+    }
 
 
 def _event_payload(event: TurnEvent) -> Dict[str, Any]:

@@ -13,6 +13,7 @@ from urllib.parse import quote_plus, urlparse
 
 from .app_aliases import (
     build_clarify_message,
+    is_learnable_alias,
     is_safe_alias,
     load_alias_store,
     normalize_app_name,
@@ -120,9 +121,9 @@ def _validate_action(action: str) -> None:
 
 
 def _validate_open_app_args(args: Dict[str, Any]) -> str:
-    target = args.get("name") or args.get("path") or args.get("app")
+    target = args.get("name") or args.get("app_name") or args.get("app") or args.get("path")
     if not isinstance(target, str) or not target.strip():
-        raise TaskError("open_app requires 'name', 'path', or 'app'")
+        raise TaskError("open_app requires 'name' or 'app_name'")
     return target
 
 
@@ -160,7 +161,7 @@ def _open_app(args: Dict[str, Any]) -> Dict[str, Any]:
             "resolution": {"source": resolution.source},
         }
     if resolution.decision != "open" or not resolution.target:
-        message = f"I couldn't open {requested_alias}. Try a different name."
+        message = f"I couldn't find an app named '{requested_alias}'."
         return {"error": message, "assistant_message": message}
 
     target = resolution.target
@@ -171,7 +172,11 @@ def _open_app(args: Dict[str, Any]) -> Dict[str, Any]:
 
     alias_learned = None
     normalized_alias = normalize_app_name(requested_alias)
-    if is_safe_alias(normalized_alias) and normalized_alias not in aliases:
+    if (
+        is_safe_alias(normalized_alias)
+        and is_learnable_alias(requested_alias)
+        and normalized_alias not in aliases
+    ):
         aliases[normalized_alias] = target
         save_alias_store(aliases)
         alias_learned = {"alias": normalized_alias, "target": target}

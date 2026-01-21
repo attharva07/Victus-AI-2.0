@@ -104,7 +104,7 @@ class ConfidenceEngine:
         final_conf = _clamp(0.6 * parse_conf + 0.4 * retrieval_conf)
         decision = _decision_for(final_conf)
         if spec and missing_fields and not required_present:
-            decision = "clarify"
+            decision = "clarify" if _has_meaningful_input(step.args) else "block"
 
         reasons = parse_reasons + retrieval_reasons
         if not reasons:
@@ -371,6 +371,10 @@ def _is_field_present(value: object) -> bool:
     if isinstance(value, str):
         return bool(value.strip())
     return True
+
+
+def _has_meaningful_input(args: Dict[str, object]) -> bool:
+    return any(_is_field_present(value) for value in args.values())
 
 
 def _extract_text_field(args: Dict[str, object], field: Optional[str]) -> Optional[str]:

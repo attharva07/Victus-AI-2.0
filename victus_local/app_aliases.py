@@ -20,6 +20,7 @@ _DEFAULT_ALIASES = {
 
 _NORMALIZE_SPACE_RE = re.compile(r"\s+")
 _SAFE_ALIAS_RE = re.compile(r"^[a-z0-9 _-]+$")
+_LEARN_BLOCKLIST_RE = re.compile(r"[\"'`]")
 
 
 @dataclass(frozen=True)
@@ -132,6 +133,20 @@ def is_safe_alias(value: str) -> bool:
     return True
 
 
+def is_learnable_alias(raw_value: str) -> bool:
+    if not raw_value or not isinstance(raw_value, str):
+        return False
+    if _LEARN_BLOCKLIST_RE.search(raw_value):
+        return False
+    if "/" in raw_value or "\\" in raw_value:
+        return False
+    if ".." in raw_value:
+        return False
+    if ":" in raw_value:
+        return False
+    return True
+
+
 def resolve_app_target(requested: str, aliases: Dict[str, str]) -> AppResolution:
     normalized = normalize_app_name(requested)
     if not normalized:
@@ -141,10 +156,6 @@ def resolve_app_target(requested: str, aliases: Dict[str, str]) -> AppResolution
         target = aliases[normalized]
         label = _label_for_target(target) or normalized.title()
         return AppResolution(decision="open", target=target, label=label, source="alias")
-
-    path = Path(requested).expanduser()
-    if path.exists():
-        return AppResolution(decision="open", target=str(path), label=path.name, source="path")
 
     exact = _KNOWN_ALIAS_MAP.get(normalized)
     if exact:

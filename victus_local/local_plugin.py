@@ -15,7 +15,7 @@ class LocalTaskPlugin(BasePlugin):
 
     def capabilities(self) -> Dict[str, Dict[str, Any]]:
         return {
-            "open_app": {"name": "Application name or path"},
+            "open_app": {"name": "Application name"},
             "open_youtube": {"query": "Search text or URL"},
             "media_play": {"provider": "spotify|youtube", "query": "Search text", "artist": "Optional"},
             "media_stop": {"provider": "spotify|youtube"},

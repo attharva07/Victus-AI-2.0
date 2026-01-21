@@ -156,7 +156,8 @@ async def turn_endpoint(request: Request, payload: TurnRequest = Body(...)) -> S
 
     async def event_stream() -> AsyncIterator[bytes]:
         try:
-            async for event in turn_handler.run_turn(message):
+            session_key = _session_key(request)
+            async for event in turn_handler.run_turn(message, session_key):
                 if await request.is_disconnected():
                     logger.info("Client disconnected; stopping turn.")
                     break
@@ -303,6 +304,12 @@ async def list_routes() -> Dict[str, Any]:
 
 def _event_payload(event: TurnEvent) -> Dict[str, Any]:
     return VictusApp._serialize_event(event)
+
+
+def _session_key(request: Request) -> str:
+    host = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "")
+    return f"{host}:{user_agent}"
 
 
 async def _forward_event_to_logs(event: TurnEvent) -> None:

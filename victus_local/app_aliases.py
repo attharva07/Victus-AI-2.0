@@ -191,8 +191,6 @@ def resolve_candidate_choice(
     for candidate in entries:
         if normalize_app_name(candidate["label"]) == normalized:
             return candidate
-        if normalize_app_name(candidate["target"]) == normalized:
-            return candidate
 
     alias_target = aliases.get(normalized)
     if alias_target:

@@ -29,15 +29,15 @@ class TurnHandler:
         self.search = MemorySearch(self.store)
         self.gate = MemoryGate()
         self.memory_store_v2 = memory_store_v2 or VictusMemoryStore()
-        self.pending_actions: Dict[str, Dict[str, Any]] = {}
+        self.pending_action: Optional[Dict[str, Any]] = None
 
-    async def run_turn(self, message: str, session_key: str) -> AsyncIterator[TurnEvent]:
-        pending = self.pending_actions.get(session_key)
+    async def run_turn(self, message: str) -> AsyncIterator[TurnEvent]:
+        pending = self.pending_action
         if pending and pending.get("intent") == "local.open_app":
             resolved = self._resolve_pending_open_app(message, pending)
             if resolved:
                 original = str(pending.get("original") or "")
-                self.pending_actions.pop(session_key, None)
+                self.pending_action = None
                 async for event in self._run_pending_open_app(message, resolved, original):
                     yield event
                 return
@@ -63,7 +63,7 @@ class TurnHandler:
             if event.event == "token" and event.token:
                 streamed_text += event.token
             if event.event == "tool_done" and event.action == "open_app":
-                self._maybe_store_pending_action(session_key, event)
+                self._maybe_store_pending_action(event)
             yield event
 
         candidate = self._extract_memory_candidate(streamed_text)
@@ -157,7 +157,7 @@ class TurnHandler:
             "pii_risk": record.pii_risk,
         }
 
-    def _maybe_store_pending_action(self, session_key: str, event: TurnEvent) -> None:
+    def _maybe_store_pending_action(self, event: TurnEvent) -> None:
         result = event.result or {}
         if not isinstance(result, dict):
             return
@@ -166,7 +166,7 @@ class TurnHandler:
         candidates = result.get("candidates")
         if not isinstance(candidates, list) or not candidates:
             return
-        self.pending_actions[session_key] = {
+        self.pending_action = {
             "intent": "local.open_app",
             "candidates": candidates,
             "missing_field": "app_name",

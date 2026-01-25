@@ -156,8 +156,11 @@ async def turn_endpoint(request: Request, payload: TurnRequest = Body(...)) -> S
     logger.info("TURN received: %s", message[:120])
 
     async def event_stream() -> AsyncIterator[bytes]:
+        end_payload = json.dumps({"event": "end"})
         try:
             session_key = _session_key(request)
+            start_payload = json.dumps({"event": "start"})
+            yield f"event: start\ndata: {start_payload}\n\n".encode("utf-8")
             async for event in turn_handler.run_turn(
                 message,
                 context={"session_key": session_key},
@@ -182,6 +185,8 @@ async def turn_endpoint(request: Request, payload: TurnRequest = Body(...)) -> S
             await _forward_event_to_logs(error_event)
             data = json.dumps(_event_payload(error_event))
             yield f"event: {error_event.event}\ndata: {data}\n\n".encode("utf-8")
+        finally:
+            yield f"event: end\ndata: {end_payload}\n\n".encode("utf-8")
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
@@ -329,6 +334,9 @@ def _event_payload(event: TurnEvent) -> Dict[str, Any]:
 
 
 def _session_key(request: Request) -> str:
+    session_id = request.headers.get("x-session-id")
+    if session_id:
+        return session_id
     host = request.client.host if request.client else "unknown"
     user_agent = request.headers.get("user-agent", "")
     return f"{host}:{user_agent}"

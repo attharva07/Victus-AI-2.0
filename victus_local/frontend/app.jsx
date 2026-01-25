@@ -49,6 +49,8 @@ function App() {
   const logDedupRef = useRef(new Map());
   const statusRef = useRef(status);
   const pendingVisualHintRef = useRef(null);
+  const sessionIdRef = useRef(null);
+  const thinkingTimerRef = useRef(null);
 
   const apiTurnEndpoint = useMemo(() => {
     const meta = document.querySelector('meta[name="victus-api-turn"]');
@@ -129,6 +131,9 @@ function App() {
   });
 
   const beginStream = () => {
+    if (currentAssistantIdRef.current) {
+      return;
+    }
     streamingTextRef.current = "";
     setIsStreaming(true);
     streamingLengthRef.current = 0;
@@ -149,6 +154,10 @@ function App() {
 
   const endStream = () => {
     setIsStreaming(false);
+    if (thinkingTimerRef.current) {
+      clearTimeout(thinkingTimerRef.current);
+      thinkingTimerRef.current = null;
+    }
     const assistantId = currentAssistantIdRef.current;
     if (assistantId) {
       setMessages((prev) =>
@@ -170,6 +179,26 @@ function App() {
     } else {
       setVisualHint(null);
     }
+  };
+
+  const scheduleThinkingFallback = () => {
+    if (thinkingTimerRef.current) {
+      clearTimeout(thinkingTimerRef.current);
+    }
+    thinkingTimerRef.current = setTimeout(() => {
+      const assistantId = currentAssistantIdRef.current;
+      if (!assistantId || streamingTextRef.current) {
+        return;
+      }
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === assistantId
+            ? { ...message, text: "Thinking…" }
+            : message
+        )
+      );
+      streamingTextRef.current = "Thinking…";
+    }, 1500);
   };
 
   const stopStreaming = () => {
@@ -194,10 +223,23 @@ function App() {
     currentAssistantIdRef.current = null;
     pendingVisualHintRef.current = null;
     streamingLengthRef.current = 0;
+    if (thinkingTimerRef.current) {
+      clearTimeout(thinkingTimerRef.current);
+      thinkingTimerRef.current = null;
+    }
   };
 
   const handleTurnEvent = (eventType, payload) => {
     if (!eventType) {
+      return;
+    }
+    if (eventType === "start") {
+      beginStream();
+      scheduleThinkingFallback();
+      return;
+    }
+    if (eventType === "end") {
+      endStream();
       return;
     }
     if (payload?.visual_hint) {
@@ -211,6 +253,10 @@ function App() {
     if (eventType === "token") {
       const chunk = payload.text ?? payload.token ?? "";
       if (chunk) {
+        if (thinkingTimerRef.current) {
+          clearTimeout(thinkingTimerRef.current);
+          thinkingTimerRef.current = null;
+        }
         streamingLengthRef.current += chunk.length;
         const assistantId = currentAssistantIdRef.current;
         setMessages((prev) => {
@@ -218,7 +264,7 @@ function App() {
           const next = prev.map((message) => {
             if (message.id === assistantId) {
               found = true;
-              const nextText = `${message.text}${chunk}`;
+              const nextText = message.text === "Thinking…" ? chunk : `${message.text}${chunk}`;
               streamingTextRef.current = nextText;
               return { ...message, text: nextText };
             }
@@ -243,6 +289,10 @@ function App() {
       return;
     }
     if (eventType === "clarify") {
+      if (thinkingTimerRef.current) {
+        clearTimeout(thinkingTimerRef.current);
+        thinkingTimerRef.current = null;
+      }
       const message = payload.message || "Can you clarify what you want Victus to do?";
       setMessages((prev) => [...prev, createMessage("Victus", message)]);
       return;
@@ -279,6 +329,10 @@ function App() {
       return;
     }
     if (eventType === "error") {
+      if (thinkingTimerRef.current) {
+        clearTimeout(thinkingTimerRef.current);
+        thinkingTimerRef.current = null;
+      }
       const message = payload.message || "Request failed.";
       appendLog("error", { message, event_id: payload.event_id });
       setMessages((prev) => [...prev, createMessage("Victus", message)]);
@@ -337,7 +391,9 @@ function App() {
     if (buffer.trim()) {
       parseSseBuffer(`${buffer}\n\n`);
     }
-    endStream();
+    if (currentAssistantIdRef.current) {
+      endStream();
+    }
     if (statusRef.current.state !== "error") {
       setStatusState("Done", "connected");
     }
@@ -458,15 +514,18 @@ function App() {
     setMessages((prev) => [...prev, createMessage("You", text)]);
     chatInputRef.current.value = "";
     setStatusState("Thinking", "busy");
-    beginStream();
     setAudioActive(true);
+    setIsStreaming(true);
 
     controllerRef.current = new AbortController();
 
     try {
       const response = await fetch(apiTurnEndpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Session-Id": sessionIdRef.current || "",
+        },
         body: JSON.stringify({ message: text }),
         signal: controllerRef.current.signal,
       });
@@ -478,6 +537,7 @@ function App() {
           createMessage("Victus", errorText || "Error retrieving response."),
         ]);
         setStatusState("Error", "error");
+        setIsStreaming(false);
         return;
       }
 
@@ -493,9 +553,9 @@ function App() {
       ]);
       setStatusState("Error", "error");
       setSphereState("error");
+      setIsStreaming(false);
     } finally {
       controllerRef.current = null;
-      setIsStreaming(false);
     }
   };
 
@@ -513,6 +573,19 @@ function App() {
     loadStatus();
     const interval = setInterval(loadStatus, 5000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!sessionIdRef.current) {
+      const stored = localStorage.getItem("victus-session-id");
+      if (stored) {
+        sessionIdRef.current = stored;
+      } else {
+        const fresh = createMessageId();
+        localStorage.setItem("victus-session-id", fresh);
+        sessionIdRef.current = fresh;
+      }
+    }
   }, []);
 
   useEffect(() => {

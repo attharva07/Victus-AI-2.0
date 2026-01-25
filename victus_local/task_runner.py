@@ -11,8 +11,9 @@ from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import quote_plus, urlparse
 
-from .app_aliases import build_clarify_message, example_candidates, normalize_app_name, resolve_app_target
+from .app_aliases import example_candidates, normalize_app_name
 from .app_dictionary import load_app_dictionary
+from .app_resolver import build_candidate_prompt, build_clarify_candidates, resolve_app_name
 
 
 class TaskError(RuntimeError):
@@ -138,48 +139,47 @@ def validate_task_args(action: str, args: Dict[str, Any]) -> None:
 def _open_app(args: Dict[str, Any]) -> Dict[str, Any]:
     target = _validate_open_app_args(args)
     requested_alias = str(args.get("requested_alias") or target)
+    label_hint = args.get("label")
     dictionary = load_app_dictionary()
-    aliases = dictionary.alias_map()
-
-    resolution = resolve_app_target(target, aliases)
-    if resolution.decision == "clarify":
-        candidates = resolution.candidates or []
+    resolution = resolve_app_name(target, dictionary)
+    candidates = build_clarify_candidates(resolution.candidates)
+    if resolution.confidence >= 0.6 and resolution.confidence < 0.85:
         return {
             "decision": "clarify",
-            "assistant_message": build_clarify_message(candidates),
+            "assistant_message": build_candidate_prompt(resolution.candidates),
             "candidates": candidates,
             "original": requested_alias,
-            "resolution": {"source": resolution.source},
+            "resolution": {"source": "fuzzy"},
         }
-    if resolution.decision != "open" or not resolution.target:
+    if resolution.confidence < 0.6 or not resolution.match:
+        examples = example_candidates()
         message = (
             f"I couldn't find an app named '{requested_alias}'. "
             "Which app should I open? Examples: Calculator, Notepad, VS Code."
         )
-        candidates = example_candidates()
         return {
             "decision": "clarify",
             "assistant_message": message,
-            "candidates": candidates,
+            "candidates": candidates or examples,
             "original": requested_alias,
-            "resolution": {"source": resolution.source},
+            "resolution": {"source": "none"},
         }
 
-    target = resolution.target
+    target = resolution.match.target
+    label = resolution.match.name or label_hint or requested_alias
     try:
         _open_path_or_app(target)
     except Exception as exc:  # noqa: BLE001
         raise TaskError(f"Unable to open app '{target}': {exc}") from exc
 
-    alias_learned = dictionary.record_success(requested_alias, target, resolution.label)
+    alias_learned = dictionary.record_success(requested_alias, target, label)
     normalized_alias = normalize_app_name(requested_alias)
 
-    display_name = resolution.label or requested_alias
-    assistant_message = f"Opened {display_name}."
+    assistant_message = f"Opened {label}."
     response = {
         "opened": target,
         "assistant_message": assistant_message,
-        "resolution": {"source": resolution.source, "alias": normalized_alias},
+        "resolution": {"source": "fuzzy", "alias": normalized_alias},
     }
     if alias_learned:
         response["alias_learned"] = alias_learned

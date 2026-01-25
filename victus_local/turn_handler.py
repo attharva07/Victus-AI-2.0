@@ -16,26 +16,25 @@ from victus.memory.models import MemoryRecord
 from victus.memory.search import MemorySearch
 from victus.memory.store import MemoryStore
 
-from .app_aliases import build_clarify_message, resolve_candidate_choice
 from .app_dictionary import load_app_dictionary
+from .app_resolver import (
+    ResolvedCandidate,
+    build_candidate_prompt,
+    extract_app_phrase,
+    resolve_app_name,
+    resolve_from_candidates,
+)
+from .dialogue_state import DialogueState, PendingAction
 from .memory_store_v2 import VictusMemory, VictusMemoryStore
 
 
 @dataclass
 class SessionState:
-    pending_tool: Optional[str] = None
-    awaiting_slot: Optional[str] = None
-    pending_slots: Dict[str, str] = field(default_factory=dict)
-    pending_candidates: List[Dict[str, str]] = field(default_factory=list)
-    pending_original: str = ""
+    dialogue: DialogueState = field(default_factory=DialogueState)
     last_user_signature: Optional[str] = None
 
     def clear_pending(self) -> None:
-        self.pending_tool = None
-        self.awaiting_slot = None
-        self.pending_slots = {}
-        self.pending_candidates = []
-        self.pending_original = ""
+        self.dialogue.pending = None
 
 
 class TurnHandler:
@@ -64,17 +63,19 @@ class TurnHandler:
             return
         session_state.last_user_signature = signature
 
-        if session_state.awaiting_slot == "app_name" and session_state.pending_tool == "local.open_app":
-            resolved = self._resolve_pending_open_app(message, session_state)
-            if resolved:
-                requested_alias = resolved.get("requested_alias") or session_state.pending_original
-                session_state.clear_pending()
-                async for event in self._run_pending_open_app(message, resolved, requested_alias):
-                    yield event
-                return
-            clarify_message = build_clarify_message(session_state.pending_candidates)
+        routed = self._route_user_input(session_state, message)
+        if routed["kind"] == "resolve_pending":
+            async for event in self._resolve_pending_action(message, session_state):
+                yield event
+            return
+        if routed["kind"] == "cancel_pending":
+            session_state.clear_pending()
             yield TurnEvent(event="status", status="done")
-            yield TurnEvent(event="clarify", message=clarify_message)
+            yield TurnEvent(event="token", token="Okay, cancelled.")
+            return
+        if routed["kind"] == "open_app":
+            async for event in self._handle_open_app(message, session_state):
+                yield event
             return
 
         memory_hits = self.search.search(message, top_k=3)
@@ -200,39 +201,30 @@ class TurnHandler:
         candidates = result.get("candidates")
         if not isinstance(candidates, list) or not candidates:
             return
-        self._set_pending_open_app(
-            session_state,
-            candidates,
-            str(result.get("original") or ""),
-        )
+        pending_candidates = [
+            ResolvedCandidate(
+                name=str(candidate.get("label") or candidate.get("name") or ""),
+                target=str(candidate.get("target") or ""),
+                score=float(candidate.get("score") or 0.0),
+            )
+            for candidate in candidates
+            if isinstance(candidate, dict)
+        ]
+        pending_candidates = [candidate for candidate in pending_candidates if candidate.name and candidate.target]
+        self._set_pending_open_app(session_state, pending_candidates, str(result.get("original") or ""))
 
     def _set_pending_open_app(
         self,
         session_state: SessionState,
-        candidates: List[Dict[str, str]],
+        candidates: List[ResolvedCandidate],
         original: str,
     ) -> None:
-        session_state.pending_tool = "local.open_app"
-        session_state.awaiting_slot = "app_name"
-        session_state.pending_slots = {"app_name": ""}
-        session_state.pending_candidates = candidates
-        session_state.pending_original = original
-
-    @staticmethod
-    def _resolve_pending_open_app(message: str, session_state: SessionState) -> Optional[Dict[str, str]]:
-        normalized = message.strip()
-        if not normalized:
-            return None
-        candidates = session_state.pending_candidates or []
-        dictionary = load_app_dictionary()
-        aliases = dictionary.alias_map()
-        resolved = resolve_candidate_choice(message, candidates, aliases)
-        if resolved:
-            label = resolved.get("label") or resolved.get("target") or normalized
-            target = resolved.get("target") or normalized
-            requested_alias = label if normalized.isdigit() else normalized
-            return {"target": target, "label": label, "requested_alias": requested_alias}
-        return {"target": normalized, "label": normalized, "requested_alias": normalized}
+        session_state.dialogue.pending = PendingAction(
+            kind="clarify_open_app",
+            original_text=original,
+            candidates=candidates,
+            created_at=time.time(),
+        )
 
     def _get_session_state(self, context: Dict[str, Any]) -> SessionState:
         session_key = context.get("session_key") or "default"
@@ -248,11 +240,12 @@ class TurnHandler:
         bucket = int(time.time() / 2)
         return f"{normalized}:{bucket}"
 
-    async def _run_pending_open_app(
+    async def _run_open_app(
         self,
         message: str,
-        resolved: Dict[str, str],
         requested_alias: str,
+        target: str,
+        label: Optional[str],
     ) -> AsyncIterator[TurnEvent]:
         plan = Plan(
             goal=message,
@@ -262,7 +255,7 @@ class TurnHandler:
                     id="step-1",
                     tool="local",
                     action="open_app",
-                    args={"name": resolved["target"], "requested_alias": requested_alias},
+                    args={"name": target, "requested_alias": requested_alias, "label": label},
                 )
             ],
             risk="low",
@@ -333,6 +326,89 @@ class TurnHandler:
             results=results,
             errors="; ".join(error_messages) if error_messages else None,
         )
+
+    def _route_user_input(self, session_state: SessionState, message: str) -> Dict[str, str]:
+        normalized = message.strip().lower()
+        if session_state.dialogue.pending:
+            if normalized in {"cancel", "stop", "exit"}:
+                return {"kind": "cancel_pending"}
+            return {"kind": "resolve_pending"}
+        if normalized in {"cancel", "stop", "exit"}:
+            return {"kind": "cancel_pending"}
+        if self._looks_like_open_app(message):
+            return {"kind": "open_app"}
+        return {"kind": "llm_chat"}
+
+    def _looks_like_open_app(self, message: str) -> bool:
+        lower = message.strip().lower()
+        if lower.startswith(("open ", "launch ", "start ", "run ")):
+            return True
+        result = resolve_app_name(message)
+        words = len(message.strip().split())
+        return result.confidence >= 0.85 and words <= 3
+
+    async def _resolve_pending_action(
+        self, message: str, session_state: SessionState
+    ) -> AsyncIterator[TurnEvent]:
+        pending = session_state.dialogue.pending
+        if not pending or pending.kind != "clarify_open_app":
+            yield TurnEvent(event="status", status="done")
+            return
+        resolved = resolve_from_candidates(message, pending.candidates)
+        if resolved:
+            session_state.clear_pending()
+            requested_alias = pending.original_text or message
+            async for event in self._run_open_app(message, requested_alias, resolved.target, resolved.name):
+                yield event
+            return
+
+        clarify_message = build_candidate_prompt(pending.candidates)
+        yield TurnEvent(event="status", status="done")
+        yield TurnEvent(event="clarify", message=clarify_message)
+
+    async def _handle_open_app(
+        self, message: str, session_state: SessionState
+    ) -> AsyncIterator[TurnEvent]:
+        dictionary = load_app_dictionary()
+        resolution = resolve_app_name(message, dictionary)
+        confidence = resolution.confidence
+        candidates = resolution.candidates
+        if confidence >= 0.85 and resolution.match:
+            session_state.clear_pending()
+            requested_alias = extract_app_phrase(message) or message
+            async for event in self._run_open_app(
+                message,
+                requested_alias,
+                resolution.match.target,
+                resolution.match.name,
+            ):
+                yield event
+            return
+
+        original_text = extract_app_phrase(message) or message
+        if confidence >= 0.6:
+            pending_candidates = candidates or []
+            session_state.dialogue.pending = PendingAction(
+                kind="clarify_open_app",
+                original_text=original_text,
+                candidates=pending_candidates,
+                created_at=time.time(),
+            )
+            clarify_message = build_candidate_prompt(pending_candidates)
+            yield TurnEvent(event="status", status="done")
+            yield TurnEvent(event="clarify", message=clarify_message)
+            return
+
+        suggestions = candidates or []
+        session_state.dialogue.pending = PendingAction(
+            kind="clarify_open_app",
+            original_text=original_text,
+            candidates=suggestions,
+            created_at=time.time(),
+        )
+        clarify_message = build_candidate_prompt(suggestions)
+        yield TurnEvent(event="status", status="done")
+        yield TurnEvent(event="clarify", message=clarify_message)
 
 
 def _extract_json_payloads(text: str) -> List[Dict[str, Any]]:

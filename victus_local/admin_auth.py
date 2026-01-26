@@ -1,3 +1,5 @@
+"""Admin authentication utilities for the local Victus server."""
+
 from __future__ import annotations
 
 import json

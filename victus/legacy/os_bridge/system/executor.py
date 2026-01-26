@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Dict
 
-from ..base import BasePlugin
-from ...core.schemas import Approval, Plan, ExecutionError
+from victus.core.schemas import Approval, ExecutionError, Plan
+from victus.domains.base import BasePlugin
 
 
 class SystemExecutor:

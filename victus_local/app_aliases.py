@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-import string
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,8 +19,7 @@ _DEFAULT_ALIASES = {
 }
 
 _NORMALIZE_SPACE_RE = re.compile(r"\s+")
-_EDGE_PUNCTUATION = "".join(ch for ch in string.punctuation if ch not in "+-_.")
-_STRIP_EDGE_PUNCT_RE = re.compile(rf"^[{re.escape(_EDGE_PUNCTUATION)}]+|[{re.escape(_EDGE_PUNCTUATION)}]+$")
+_REMOVE_PUNCTUATION_RE = re.compile(r"[^a-zA-Z0-9\\s]")
 _SAFE_ALIAS_RE = re.compile(r"^[a-z0-9 _-]+$")
 _LEARN_BLOCKLIST_RE = re.compile(r"[\"'`]")
 _SUSPICIOUS_ALIAS_RE = re.compile(r"(;|&&|\|\||\||>|<|\b(powershell|cmd)\b|/c)", re.IGNORECASE)
@@ -67,8 +65,8 @@ def _now_iso() -> str:
 def normalize_app_name(value: str) -> str:
     stripped = value.strip()
     stripped = stripped.strip("\"'")
-    stripped = _STRIP_EDGE_PUNCT_RE.sub("", stripped)
-    collapsed = _NORMALIZE_SPACE_RE.sub(" ", stripped)
+    stripped = _REMOVE_PUNCTUATION_RE.sub(" ", stripped)
+    collapsed = _NORMALIZE_SPACE_RE.sub(" ", stripped).strip()
     return collapsed.lower()
 
 
@@ -190,10 +188,9 @@ def build_clarify_message(candidates: Iterable[Dict[str, str]]) -> str:
     entries = list(candidates)
     if not entries:
         return "Which app should I open?"
-    choices = " ".join(
-        f"({index}) {candidate['label']}" for index, candidate in enumerate(entries, start=1)
-    )
-    return f"Which app should I open? {choices}"
+    lines = ["I found multiple matches. Which one should I open?"]
+    lines.extend(f"• {candidate['label']}" for candidate in entries)
+    return "\n".join(lines)
 
 
 def resolve_candidate_choice(

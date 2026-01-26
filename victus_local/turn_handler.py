@@ -38,6 +38,8 @@ class SessionState:
 
 
 class TurnHandler:
+    MAX_PENDING_ATTEMPTS = 2
+
     def __init__(
         self,
         app: VictusApp,
@@ -96,9 +98,6 @@ class TurnHandler:
                 streamed_text += event.token
             if event.event == "tool_done" and event.action == "open_app":
                 self._maybe_store_pending_action(event, session_state)
-            if event.event == "clarify" and event.message:
-                if event.message.strip().lower().startswith("which app should i open"):
-                    self._set_pending_open_app(session_state, [], "")
             yield event
 
         candidate = self._extract_memory_candidate(streamed_text)
@@ -220,10 +219,11 @@ class TurnHandler:
         original: str,
     ) -> None:
         session_state.dialogue.pending = PendingAction(
-            kind="clarify_open_app",
+            kind="open_app",
             original_text=original,
             candidates=candidates,
             created_at=time.time(),
+            attempts=0,
         )
 
     def _get_session_state(self, context: Dict[str, Any]) -> SessionState:
@@ -351,7 +351,7 @@ class TurnHandler:
         self, message: str, session_state: SessionState
     ) -> AsyncIterator[TurnEvent]:
         pending = session_state.dialogue.pending
-        if not pending or pending.kind != "clarify_open_app":
+        if not pending or pending.kind != "open_app":
             yield TurnEvent(event="status", status="done")
             return
         resolved = resolve_from_candidates(message, pending.candidates)
@@ -362,9 +362,16 @@ class TurnHandler:
                 yield event
             return
 
-        clarify_message = build_candidate_prompt(pending.candidates)
+        pending.attempts += 1
+        if pending.attempts < self.MAX_PENDING_ATTEMPTS:
+            clarify_message = build_candidate_prompt(pending.candidates)
+            yield TurnEvent(event="status", status="done")
+            yield TurnEvent(event="clarify", message=clarify_message)
+            return
+
+        session_state.clear_pending()
         yield TurnEvent(event="status", status="done")
-        yield TurnEvent(event="clarify", message=clarify_message)
+        yield TurnEvent(event="token", token="Sorry, I couldn't match that app. Please try again.")
 
     async def _handle_open_app(
         self, message: str, session_state: SessionState
@@ -386,27 +393,14 @@ class TurnHandler:
             return
 
         original_text = extract_app_phrase(message) or message
-        if confidence >= 0.6:
-            pending_candidates = candidates or []
-            session_state.dialogue.pending = PendingAction(
-                kind="clarify_open_app",
-                original_text=original_text,
-                candidates=pending_candidates,
-                created_at=time.time(),
-            )
-            clarify_message = build_candidate_prompt(pending_candidates)
+        if not candidates:
+            session_state.clear_pending()
             yield TurnEvent(event="status", status="done")
-            yield TurnEvent(event="clarify", message=clarify_message)
+            yield TurnEvent(event="token", token=f"I can't find {original_text}.")
             return
 
-        suggestions = candidates or []
-        session_state.dialogue.pending = PendingAction(
-            kind="clarify_open_app",
-            original_text=original_text,
-            candidates=suggestions,
-            created_at=time.time(),
-        )
-        clarify_message = build_candidate_prompt(suggestions)
+        self._set_pending_open_app(session_state, candidates, original_text)
+        clarify_message = build_candidate_prompt(candidates)
         yield TurnEvent(event="status", status="done")
         yield TurnEvent(event="clarify", message=clarify_message)
 

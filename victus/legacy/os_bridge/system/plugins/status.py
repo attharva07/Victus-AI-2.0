@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from ...base import BasePlugin
-from ....core.schemas import Approval, ExecutionError
+from victus.core.schemas import Approval, ExecutionError
+from victus.domains.base import BasePlugin
 
 
 class SystemStatusPlugin(BasePlugin):

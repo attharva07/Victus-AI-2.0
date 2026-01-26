@@ -40,3 +40,4 @@ victus_local/app_aliases.json
 # Tooling
 .idea/
 .vscode/
+.wrangler/

@@ -13,8 +13,8 @@ except ImportError as exc:  # pragma: no cover - exercised in tests via stubbing
 else:
     _PSUTIL_IMPORT_ERROR = None
 
-from ..base import BasePlugin
-from ...core.schemas import Approval, ExecutionError
+from victus.core.schemas import Approval, ExecutionError
+from victus.domains.base import BasePlugin
 
 
 PROCESS_PERMISSION_NOTE = "process mapping limited by permissions"

@@ -1,5 +1,62 @@
 # Victus AI 2.0
 
+## Server-Mode Only (Phase 0 Baseline)
+Victus now ships in **server-mode only**: no local OS control, no app launching, and no always-on loops. Local/OS automation modules are quarantined under `victus/legacy/os_bridge/` and are not imported by the server runtime. The supported entrypoint is the FastAPI server in `victus/server`. This keeps the repo deploy-ready and safe for hosted environments.
+
+### Local server setup (FastAPI)
+1. Create and activate a virtual environment:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   ```
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Configure environment:
+   ```bash
+   cp .env.example .env
+   ```
+   Update `TOKEN_SECRET`, `MFA_SECRET_KEY`, and `CORS_ALLOW_ORIGINS` before running.
+4. Run the server:
+   ```bash
+   uvicorn victus.server.app:app --host 0.0.0.0 --port 8000
+   ```
+5. Validate minimal endpoints:
+   - `GET /health`
+   - `POST /auth/register`
+   - `POST /auth/login`
+   - `GET /me` (with `Authorization: Bearer <token>`)
+
+### Deploy (Cloudflare Workers + D1, free tier)
+1. Install Wrangler (free):
+   ```bash
+   npm install -g wrangler
+   ```
+2. Create a D1 database:
+   ```bash
+   wrangler d1 create victus_db
+   ```
+   Copy the returned `database_id` into `wrangler.toml`.
+3. Apply migrations:
+   ```bash
+   wrangler d1 migrations apply victus_db --local
+   wrangler d1 migrations apply victus_db
+   ```
+4. Set required secrets and deploy:
+   ```bash
+   wrangler secret put TOKEN_SECRET
+   wrangler secret put MFA_SECRET_KEY
+   wrangler deploy
+   ```
+5. After deploy, confirm:
+   - `GET https://<your-worker>.workers.dev/health`
+   - `POST https://<your-worker>.workers.dev/auth/register`
+   - `POST https://<your-worker>.workers.dev/auth/login`
+   - `GET https://<your-worker>.workers.dev/me`
+
+> NOTE: The Worker implementation stores TOTP secrets with lightweight obfuscation only; replace with proper encryption in a future hardening pass.
+
 ## What Victus is
 Victus is a **local, policy-gated assistant** that routes every request through a deterministic router, an intent planner, and a policy gate before any tool executes. It is designed for local-first workflows: a single input box, streaming responses, and auditable events across tools, memory, and finance.
 

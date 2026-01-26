@@ -14,13 +14,14 @@ def test_pending_resolution_flow():
     handler = TurnHandler(app=DummyApp())
     session = SessionState()
     session.dialogue.pending = PendingAction(
-        kind="clarify_open_app",
+        kind="open_app",
         original_text="open calculator",
         candidates=[
             ResolvedCandidate(name="Calculator", target="calc.exe", score=0.9),
             ResolvedCandidate(name="Notepad", target="notepad.exe", score=0.7),
         ],
         created_at=0.0,
+        attempts=0,
     )
 
     async def _fake_run_open_app(_message, _requested_alias, _target, _label):

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import quote_plus, urlparse
 
-from .app_aliases import example_candidates, normalize_app_name
+from .app_aliases import normalize_app_name
 from .app_dictionary import load_app_dictionary
 from .app_resolver import build_candidate_prompt, build_clarify_candidates, resolve_app_name
 
@@ -152,15 +152,11 @@ def _open_app(args: Dict[str, Any]) -> Dict[str, Any]:
             "resolution": {"source": "fuzzy"},
         }
     if resolution.confidence < 0.6 or not resolution.match:
-        examples = example_candidates()
-        message = (
-            f"I couldn't find an app named '{requested_alias}'. "
-            "Which app should I open? Examples: Calculator, Notepad, VS Code."
-        )
+        message = f"I can't find {requested_alias}."
         return {
-            "decision": "clarify",
+            "decision": "not_found",
             "assistant_message": message,
-            "candidates": candidates or examples,
+            "candidates": candidates,
             "original": requested_alias,
             "resolution": {"source": "none"},
         }

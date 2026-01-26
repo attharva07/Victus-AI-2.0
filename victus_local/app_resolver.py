@@ -41,21 +41,25 @@ def resolve_app_name(text: str, app_index: AppDictionary | None = None) -> AppRe
         return AppResolutionResult(match=match, confidence=1.0, candidates=[match])
 
     entries = _build_candidate_entries(dictionary)
-    for entry_name, entry_target in entries:
-        if normalize_app_name(entry_name) == normalized:
-            label = _label_for_target(entry_target, dictionary) or entry_name
-            match = ResolvedCandidate(name=label, target=entry_target, score=1.0)
-            return AppResolutionResult(match=match, confidence=1.0, candidates=[match])
-
     partial_targets: Dict[str, ResolvedCandidate] = {}
+    exact_target: Optional[ResolvedCandidate] = None
     for entry_name, entry_target in entries:
         entry_normalized = normalize_app_name(entry_name)
-        if normalized and normalized in entry_normalized:
+        if not normalized or not entry_normalized:
+            continue
+        if normalized in entry_normalized:
             label = _label_for_target(entry_target, dictionary) or entry_name
-            partial_targets[entry_target] = ResolvedCandidate(name=label, target=entry_target, score=0.9)
+            candidate = ResolvedCandidate(name=label, target=entry_target, score=0.9)
+            partial_targets[entry_target] = candidate
+            if entry_normalized == normalized:
+                exact_target = ResolvedCandidate(name=label, target=entry_target, score=1.0)
+
     if len(partial_targets) == 1:
-        match = next(iter(partial_targets.values()))
+        match = exact_target or next(iter(partial_targets.values()))
         return AppResolutionResult(match=match, confidence=match.score, candidates=[match])
+    if len(partial_targets) > 1:
+        candidates = list(partial_targets.values())
+        return AppResolutionResult(match=None, confidence=0.7, candidates=candidates)
 
     scored = _score_candidates(normalized, entries, dictionary)
     if not scored:
@@ -69,7 +73,7 @@ def resolve_from_candidates(
     candidates: Iterable[ResolvedCandidate],
     app_index: AppDictionary | None = None,
 ) -> Optional[ResolvedCandidate]:
-    normalized = normalize_app_name(text)
+    normalized = normalize_app_name(extract_app_phrase(text))
     entries = list(candidates)
     if not normalized or not entries:
         return None
@@ -90,6 +94,10 @@ def resolve_from_candidates(
             if candidate.target.lower() == alias_target.lower():
                 return candidate
 
+    partial_matches = _unique_partial_match(normalized, entries)
+    if partial_matches:
+        return partial_matches
+
     best = _best_fuzzy_match(normalized, [(entry.name, entry.target) for entry in entries])
     if best and best.score >= 0.6:
         return best
@@ -104,8 +112,9 @@ def build_candidate_prompt(candidates: Iterable[ResolvedCandidate]) -> str:
     entries = list(candidates)
     if not entries:
         return "Which app should I open?"
-    choices = " ".join(f"({idx}) {entry.name}" for idx, entry in enumerate(entries, start=1))
-    return f"Which app should I open? {choices}"
+    lines = ["I found multiple matches. Which one should I open?"]
+    lines.extend(f"• {entry.name}" for entry in entries)
+    return "\n".join(lines)
 
 
 def extract_app_phrase(text: str) -> str:
@@ -168,6 +177,17 @@ def _best_fuzzy_match(normalized: str, entries: Iterable[Tuple[str, str]]) -> Op
         if not best or score > best.score:
             best = ResolvedCandidate(name=name, target=target, score=score)
     return best
+
+
+def _unique_partial_match(normalized: str, entries: List[ResolvedCandidate]) -> Optional[ResolvedCandidate]:
+    matches = []
+    for entry in entries:
+        candidate_name = normalize_app_name(entry.name)
+        if normalized and (normalized in candidate_name or candidate_name.startswith(normalized)):
+            matches.append(entry)
+    if len(matches) == 1:
+        return matches[0]
+    return None
 
 
 def _similarity(a: str, b: str) -> float:

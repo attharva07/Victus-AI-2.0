@@ -474,7 +474,7 @@ class VictusApp:
     @staticmethod
     def _limited_mode_message(*, pending_action: bool = False) -> str:
         if pending_action:
-            return "LLM is unavailable. Reply with the app name (or a number) to continue."
+            return "LLM is unavailable. Reply with the app name to continue."
         return "LLM is unavailable (limited mode). Try a direct command (e.g., 'open calculator')."
 
     async def _limited_mode_response(self, *, pending_action: bool = False) -> AsyncIterator[TurnEvent]:

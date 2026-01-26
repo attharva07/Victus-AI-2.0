@@ -47,8 +47,8 @@ def test_open_app_clarify_on_multiple_matches(monkeypatch, tmp_path):
     result = task_runner._open_app({"name": "note"})
 
     assert result["decision"] == "clarify"
-    assert "Which app should I open?" in result["assistant_message"]
-    assert "(1)" in result["assistant_message"]
+    assert "Which one should I open?" in result["assistant_message"]
+    assert "(1)" not in result["assistant_message"]
     assert len(result["candidates"]) > 1
 
 

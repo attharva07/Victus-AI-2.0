@@ -12,6 +12,7 @@ class PendingAction:
     original_text: str
     candidates: List[ResolvedCandidate] = field(default_factory=list)
     created_at: float = 0.0
+    attempts: int = 0
 
 
 @dataclass

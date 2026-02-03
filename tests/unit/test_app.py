@@ -101,7 +101,7 @@ def test_safety_filter_fallbacks_to_productivity(monkeypatch):
         user_input="system status; run powershell to delete stuff",
         context=build_context(),
         domain="productivity",
-        steps=[PlanStep(id="step-1", tool="docs", action="create", args={"title": "report", "content": ""})],
+        steps=[PlanStep(id="step-1", tool="docs", action="create", args={"title": "report", "content": "report"})],
     )
 
     assert planner_called is True

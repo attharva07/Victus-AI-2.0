@@ -130,6 +130,9 @@ def _short_message(message: str | None, limit: int = 120) -> str:
         return compact
     return f"{compact[:limit].rstrip()}…"
 
+
+def _format_source(event: FailureEvent) -> str:
+    component = getattr(event, "component", None)
     if component:
         return f"victus.core.{component}"
     return f"victus.domains.{event.domain}"

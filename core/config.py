@@ -15,6 +15,15 @@ class LocalPaths:
     file_sandbox_dir: Path
 
 
+@dataclass(frozen=True)
+class CameraConfig:
+    enabled: bool
+    backend: str
+    device_index: int
+    max_image_bytes: int
+    max_dim: int
+
+
 def _default_base_dir() -> Path:
     override = os.getenv("VICTUS_DATA_DIR")
     if override:
@@ -54,3 +63,40 @@ def ensure_directories() -> LocalPaths:
     ):
         path.mkdir(parents=True, exist_ok=True)
     return paths
+
+
+def _parse_bool(value: str | None, default: bool) -> bool:
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _parse_int(value: str | None, default: int) -> int:
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def get_camera_config() -> CameraConfig:
+    enabled = _parse_bool(os.getenv("VICTUS_CAMERA_ENABLED"), False)
+    backend = os.getenv("VICTUS_CAMERA_BACKEND", "stub").strip().lower()
+    if backend not in {"stub", "opencv"}:
+        backend = "stub"
+    device_index = _parse_int(os.getenv("VICTUS_CAMERA_DEVICE_INDEX"), 0)
+    max_image_bytes = _parse_int(os.getenv("VICTUS_CAMERA_MAX_IMAGE_BYTES"), 2_000_000)
+    max_dim = _parse_int(os.getenv("VICTUS_CAMERA_MAX_DIM"), 1280)
+    return CameraConfig(
+        enabled=enabled,
+        backend=backend,
+        device_index=device_index,
+        max_image_bytes=max_image_bytes,
+        max_dim=max_dim,
+    )

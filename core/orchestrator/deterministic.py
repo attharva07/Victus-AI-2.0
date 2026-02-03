@@ -132,8 +132,24 @@ def parse_files_intent(utterance: str) -> Optional[Intent]:
     return None
 
 
+def parse_camera_intent(utterance: str) -> Optional[Intent]:
+    lowered = utterance.lower().strip()
+    if lowered in {"camera status", "status camera", "camera state"}:
+        return Intent(action="camera.status", parameters={}, confidence=1.0)
+    if lowered in {"capture photo", "take a picture", "take a photo"}:
+        return Intent(action="camera.capture", parameters={}, confidence=1.0)
+    if lowered in {"detect face", "detect faces", "recognize", "recognize faces"}:
+        return Intent(action="camera.recognize", parameters={}, confidence=1.0)
+    return None
+
+
 def parse_intent(utterance: str) -> Optional[Intent]:
-    return parse_memory_intent(utterance) or parse_finance_intent(utterance) or parse_files_intent(utterance)
+    return (
+        parse_camera_intent(utterance)
+        or parse_memory_intent(utterance)
+        or parse_finance_intent(utterance)
+        or parse_files_intent(utterance)
+    )
 
 
 def looks_like_finance(utterance: str) -> bool:

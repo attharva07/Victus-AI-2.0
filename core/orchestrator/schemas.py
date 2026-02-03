@@ -12,6 +12,9 @@ class OrchestrateRequest(BaseModel):
 class Intent(BaseModel):
     action: Literal[
         "noop",
+        "camera.status",
+        "camera.capture",
+        "camera.recognize",
         "memory.add",
         "memory.search",
         "memory.list",

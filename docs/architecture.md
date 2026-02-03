@@ -1,28 +1,31 @@
-# Victus Architecture
+# Victus Architecture (Phase 1 Local)
 
-## System diagram
+## Overview
+Phase 1 focuses on a local-only foundation that is deterministic-first, with an LLM as a fallback proposer only. The system is intentionally scaffolded to avoid executing real actions or Phase 2 capabilities.
+
+## Local service layout
+```
+apps/local/launcher.py  -> prepares environment, starts API
+apps/local/main.py      -> FastAPI app
+core/                   -> config, logging, security, orchestrator, vault
+adapters/               -> LLM + runtime scaffolding
+```
+
+## Request flow
 ```
 User
-  → /api/turn (SSE stream)
-     → TurnHandler
-        → MemorySearch (keyword + recency)
-        → VictusApp
-           → Rule Router
-           → Intent Planner (LLM)
-           → Policy Engine
-           → Execution Engine
-        → MemoryGate + MemoryStore (JSONL)
+  → /health (no auth)
+  → /login (admin auth)
+  → /me (auth)
+  → /orchestrate (auth)
+        → Deterministic router
+        → LLM fallback proposer (no execution)
+        → Policy validation
 ```
 
-## Event stream
-Each turn emits structured events over SSE:
-- `status` (thinking, executing, done, denied, error)
-- `token` (streamed model output)
-- `tool_start` / `tool_done`
-- `memory_used` / `memory_written`
+## Data boundaries
+- Data persists under an OS-specific base directory (data/logs/vault).
+- Vault access is mediated by safe path joins, allowlists, and traversal protections.
 
-The local UI subscribes to `/api/turn` and `/api/logs/stream` for live updates.
-
-## Local-only data
-- Memory JSONL: `victus_data/memory/`
-- Finance SQLite: `victus_data/finance/finance.db`
+## Explicitly out of scope
+Phase 2 capabilities (memory, finance, file operations, camera, utilities) are not implemented in Phase 1.

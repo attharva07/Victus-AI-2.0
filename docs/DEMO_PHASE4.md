@@ -13,7 +13,7 @@ This legacy demo opens the Qt popup UI directly for text-only interactions. The 
 ## Run the popup
 From the repo root:
 ```bash
-python experiments/run_ui_temp.py
+python run_ui_temp.py
 ```
 The popup window opens immediately with no tray icon or global hotkey.
 

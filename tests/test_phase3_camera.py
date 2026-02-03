@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import importlib
 from pathlib import Path
 
@@ -41,13 +40,19 @@ def test_camera_disabled_returns_forbidden(monkeypatch: pytest.MonkeyPatch, tmp_
     assert status_response.status_code == 200
     payload = status_response.json()
     assert payload["enabled"] is False
-    assert payload["available"] is False
+    assert payload["ok"] is False
 
     capture_response = client.post("/camera/capture", headers=headers)
-    assert capture_response.status_code == 403
+    assert capture_response.status_code == 200
+    capture_payload = capture_response.json()
+    assert capture_payload["ok"] is False
+    assert capture_payload["enabled"] is False
 
     recognize_response = client.post("/camera/recognize", headers=headers)
-    assert recognize_response.status_code == 403
+    assert recognize_response.status_code == 200
+    recognize_payload = recognize_response.json()
+    assert recognize_payload["ok"] is False
+    assert recognize_payload["enabled"] is False
 
 
 def test_camera_stub_capture_and_recognize(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -59,20 +64,21 @@ def test_camera_stub_capture_and_recognize(monkeypatch: pytest.MonkeyPatch, tmp_
     status_payload = status_response.json()
     assert status_payload["enabled"] is True
     assert status_payload["backend"] == "stub"
-    assert status_payload["available"] is True
+    assert status_payload["ok"] is True
 
     capture_response = client.post("/camera/capture", headers=headers)
     assert capture_response.status_code == 200
     capture_payload = capture_response.json()
-    assert capture_payload["captured"] is True
-    assert capture_payload["format"] == "jpeg"
-    assert capture_payload["width"] == 1
-    assert capture_payload["height"] == 1
-    image_bytes = base64.b64decode(capture_payload["image_base64"])
-    assert len(image_bytes) <= 2_000_000
+    assert capture_payload["ok"] is True
+    assert capture_payload["enabled"] is True
+    assert capture_payload["backend"] == "stub"
+    assert capture_payload["stored"] is False
+    assert capture_payload["capture_id"]
 
     recognize_response = client.post("/camera/recognize", headers=headers)
     assert recognize_response.status_code == 200
     recognize_payload = recognize_response.json()
-    assert recognize_payload["faces_detected"] == 0
-    assert recognize_payload["boxes"] == []
+    assert recognize_payload["ok"] is True
+    assert recognize_payload["enabled"] is True
+    assert recognize_payload["backend"] == "stub"
+    assert recognize_payload["matches"] == []

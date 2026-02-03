@@ -1,23 +1,26 @@
 # Phase 3 Camera Recognition MVP
 
 ## Summary
-Phase 3 adds **opt-in, auth-protected** camera endpoints for Victus Local. The camera is **off by default** and only captures a single frame per request. There is no background recording and no cloud calls.
+Phase 3 adds **opt-in, auth-protected** camera endpoints for Victus Local. The camera is **off by default** and responds with **structured, deterministic** stub payloads (no hardware required).
 
 ## What this phase includes
 - Auth-protected camera endpoints:
   - `GET /camera/status`
   - `POST /camera/capture`
   - `POST /camera/recognize`
-- A backend abstraction with:
-  - **Stub backend** (default, deterministic, no hardware required)
-  - **OpenCV backend** (optional, only when explicitly enabled)
-- Face detection only (no identity recognition)
-- Strict size limits and no disk writes by default
+- A backend abstraction with a **stub backend** (default, deterministic, no hardware required)
+- Explicit safety gating: when disabled, endpoints return `{ ok: false, enabled: false, ... }` without touching hardware
+- Audit entries per request with action, enabled flag, backend, and request ID
+
+## Safety + permissions rationale
+- The camera is **off by default** (`VICTUS_CAMERA_ENABLED=false`).
+- Responses are **stubbed** (no device access, no disk writes, no cloud calls).
+- Enabling the camera is an explicit, local-only opt-in; the API is auth-protected.
 
 ## What this phase does **not** include
 - No UI work or UI changes
-- No always-on or background camera recording
-- No identity recognition or cloud processing
+- No real webcam capture or streaming
+- No face recognition models or identity matching
 - No changes to Phase 1/2 memory/finance/file behavior
 
 ## How to enable locally
@@ -25,16 +28,7 @@ Camera endpoints are disabled by default. Enable them explicitly via environment
 
 ```bash
 export VICTUS_CAMERA_ENABLED=true
-export VICTUS_CAMERA_BACKEND=stub   # or "opencv" if OpenCV is installed
-export VICTUS_CAMERA_DEVICE_INDEX=0
-export VICTUS_CAMERA_MAX_IMAGE_BYTES=2000000
-export VICTUS_CAMERA_MAX_DIM=1280
-```
-
-To use the OpenCV backend, install it locally (optional dependency):
-
-```bash
-pip install opencv-python
+export VICTUS_CAMERA_BACKEND=stub
 ```
 
 ## API usage examples
@@ -49,11 +43,17 @@ TOKEN=$(curl -s http://localhost:8000/login \
 # status
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/camera/status
 
-# capture
-curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8000/camera/capture
+# capture (optional reason/format)
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"reason":"manual check","format":"jpg"}' \
+  http://localhost:8000/camera/capture
 
-# recognize (face detection)
-curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8000/camera/recognize
+# recognize (optional capture_id or image_b64)
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"capture_id":"stub-capture"}' \
+  http://localhost:8000/camera/recognize
 ```
 
 ### PowerShell
@@ -67,8 +67,10 @@ $token = $login.access_token
 Invoke-RestMethod -Uri http://localhost:8000/camera/status -Headers @{Authorization = "Bearer $token"}
 
 # capture
-Invoke-RestMethod -Uri http://localhost:8000/camera/capture -Method Post -Headers @{Authorization = "Bearer $token"}
+Invoke-RestMethod -Uri http://localhost:8000/camera/capture -Method Post -Headers @{Authorization = "Bearer $token"} `
+  -ContentType "application/json" -Body '{"reason":"manual check","format":"jpg"}'
 
 # recognize
-Invoke-RestMethod -Uri http://localhost:8000/camera/recognize -Method Post -Headers @{Authorization = "Bearer $token"}
+Invoke-RestMethod -Uri http://localhost:8000/camera/recognize -Method Post -Headers @{Authorization = "Bearer $token"} `
+  -ContentType "application/json" -Body '{"capture_id":"stub-capture"}'
 ```

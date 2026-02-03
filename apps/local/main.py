@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
 from adapters.llm.provider import LLMProvider
-from core.camera.errors import CameraError
 from core.camera.models import CameraStatus, CaptureResponse, RecognizeResponse
 from core.camera.service import CameraService
 from core.config import ensure_directories
@@ -50,6 +49,16 @@ class FileWriteRequest(BaseModel):
     path: str
     content: str
     mode: str = "overwrite"
+
+
+class CameraCaptureRequest(BaseModel):
+    reason: str | None = None
+    format: str = "jpg"
+
+
+class CameraRecognizeRequest(BaseModel):
+    capture_id: str | None = None
+    image_b64: str | None = None
 
 
 def _request_id(request: Request) -> str | None:
@@ -178,20 +187,28 @@ def create_app() -> FastAPI:
         return camera_service.status(request_id=request_id)
 
     @app.post("/camera/capture", response_model=CaptureResponse)
-    def camera_capture(request: Request, user: str = Depends(require_user)) -> CaptureResponse:
+    def camera_capture(
+        request: Request,
+        payload: CameraCaptureRequest = Body(default_factory=CameraCaptureRequest),
+        user: str = Depends(require_user),
+    ) -> CaptureResponse:
         request_id = _request_id(request)
-        try:
-            return camera_service.capture(request_id=request_id)
-        except CameraError as exc:
-            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        return camera_service.capture(
+            request_id=request_id, reason=payload.reason, format=payload.format
+        )
 
     @app.post("/camera/recognize", response_model=RecognizeResponse)
-    def camera_recognize(request: Request, user: str = Depends(require_user)) -> RecognizeResponse:
+    def camera_recognize(
+        request: Request,
+        payload: CameraRecognizeRequest = Body(default_factory=CameraRecognizeRequest),
+        user: str = Depends(require_user),
+    ) -> RecognizeResponse:
         request_id = _request_id(request)
-        try:
-            return camera_service.recognize(request_id=request_id)
-        except CameraError as exc:
-            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        return camera_service.recognize(
+            request_id=request_id,
+            capture_id=payload.capture_id,
+            image_b64=payload.image_b64,
+        )
 
     return app
 

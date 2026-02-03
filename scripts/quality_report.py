@@ -9,9 +9,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Tuple
 
-from victus.core.failures import FailureLogger
-from victus.core.memory import proposals
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -164,8 +161,6 @@ def _count_new_proposals() -> int:
     except Exception:
         return 0
 
-    return len(proposals.list_proposals(PROPOSALS_DIR, status="new"))
-
 
 def _latest_weekly_report() -> str:
     if not WEEKLY_REPORT_DIR.exists():
@@ -190,11 +185,6 @@ def _count_recurring_signatures_last_week() -> int:
         key = stack_hash or f"{event.failure.get('code')}:{event.component}"
         counts[key] = counts.get(key, 0) + 1
     return sum(1 for count in counts.values() if count >= 3)
-
-    reports = sorted(WEEKLY_REPORT_DIR.glob("*.md"))
-    if not reports:
-        return "none"
-    return reports[-1].name
 
 
 def main() -> int:

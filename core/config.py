@@ -12,6 +12,7 @@ class LocalPaths:
     data_dir: Path
     logs_dir: Path
     vault_dir: Path
+    file_sandbox_dir: Path
 
 
 def _default_base_dir() -> Path:
@@ -32,11 +33,24 @@ def get_local_paths() -> LocalPaths:
     data_dir = base_dir / "data"
     logs_dir = base_dir / "logs"
     vault_dir = base_dir / "vault"
-    return LocalPaths(base_dir=base_dir, data_dir=data_dir, logs_dir=logs_dir, vault_dir=vault_dir)
+    file_sandbox_dir = Path(os.getenv("VICTUS_FILE_SANDBOX_DIR", data_dir / "sandbox_files")).expanduser()
+    return LocalPaths(
+        base_dir=base_dir,
+        data_dir=data_dir,
+        logs_dir=logs_dir,
+        vault_dir=vault_dir,
+        file_sandbox_dir=file_sandbox_dir,
+    )
 
 
 def ensure_directories() -> LocalPaths:
     paths = get_local_paths()
-    for path in (paths.base_dir, paths.data_dir, paths.logs_dir, paths.vault_dir):
+    for path in (
+        paths.base_dir,
+        paths.data_dir,
+        paths.logs_dir,
+        paths.vault_dir,
+        paths.file_sandbox_dir,
+    ):
         path.mkdir(parents=True, exist_ok=True)
     return paths

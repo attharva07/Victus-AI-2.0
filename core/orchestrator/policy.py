@@ -4,6 +4,9 @@ from core.orchestrator.schemas import Intent
 
 _ALLOWED_ACTIONS = {
     "noop",
+    "camera.status",
+    "camera.capture",
+    "camera.recognize",
     "memory.add",
     "memory.search",
     "memory.list",

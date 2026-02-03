@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
 from adapters.llm.provider import LLMProvider
+from core.camera.errors import CameraError
+from core.camera.models import CameraStatus, CaptureResponse, RecognizeResponse
+from core.camera.service import CameraService
 from core.config import ensure_directories
 from core.filesystem.sandbox import FileSandboxError
 from core.filesystem.service import list_sandbox_files, read_sandbox_file, write_sandbox_file
@@ -49,11 +52,16 @@ class FileWriteRequest(BaseModel):
     mode: str = "overwrite"
 
 
+def _request_id(request: Request) -> str | None:
+    return request.headers.get("X-Request-ID") or request.headers.get("X-Request-Id")
+
+
 def create_app() -> FastAPI:
     ensure_directories()
     get_logger()
     app = FastAPI(title="Victus Local")
     llm_provider = LLMProvider()
+    camera_service = CameraService()
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -163,6 +171,27 @@ def create_app() -> FastAPI:
         except FileSandboxError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         return {"ok": True}
+
+    @app.get("/camera/status", response_model=CameraStatus)
+    def camera_status(request: Request, user: str = Depends(require_user)) -> CameraStatus:
+        request_id = _request_id(request)
+        return camera_service.status(request_id=request_id)
+
+    @app.post("/camera/capture", response_model=CaptureResponse)
+    def camera_capture(request: Request, user: str = Depends(require_user)) -> CaptureResponse:
+        request_id = _request_id(request)
+        try:
+            return camera_service.capture(request_id=request_id)
+        except CameraError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    @app.post("/camera/recognize", response_model=RecognizeResponse)
+    def camera_recognize(request: Request, user: str = Depends(require_user)) -> RecognizeResponse:
+        request_id = _request_id(request)
+        try:
+            return camera_service.recognize(request_id=request_id)
+        except CameraError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
     return app
 

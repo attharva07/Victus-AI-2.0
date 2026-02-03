@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from adapters.llm.provider import LLMProvider
+from core.camera.errors import CameraError
+from core.camera.service import CameraService
 from core.filesystem.service import list_sandbox_files, read_sandbox_file, write_sandbox_file
 from core.finance.service import add_transaction, list_transactions, summary
 from core.logging.audit import audit_event
@@ -17,6 +19,29 @@ def _deterministic_route(request: OrchestrateRequest) -> Intent | None:
 def _execute_intent(intent: Intent) -> tuple[str, list[ActionResult]]:
     action = intent.action
     params = intent.parameters
+    if action == "camera.status":
+        service = CameraService()
+        status = service.status()
+        result = ActionResult(action=action, parameters=params, result=status.model_dump())
+        return status.message, [result]
+    if action == "camera.capture":
+        service = CameraService()
+        try:
+            capture = service.capture()
+        except CameraError as exc:
+            result = ActionResult(action=action, parameters=params, result={"error": str(exc)})
+            return str(exc), [result]
+        result = ActionResult(action=action, parameters=params, result=capture.model_dump())
+        return "Captured image.", [result]
+    if action == "camera.recognize":
+        service = CameraService()
+        try:
+            recognition = service.recognize()
+        except CameraError as exc:
+            result = ActionResult(action=action, parameters=params, result={"error": str(exc)})
+            return str(exc), [result]
+        result = ActionResult(action=action, parameters=params, result=recognition.model_dump())
+        return f"Detected {recognition.faces_detected} faces.", [result]
     if action == "memory.add":
         memory_id = add_memory(content=params["content"])
         audit_event("orchestrate_memory_add", memory_id=memory_id)

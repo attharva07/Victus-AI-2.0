@@ -50,6 +50,10 @@ class OrchestrateResponse(BaseModel):
     intent: Intent
     message: str
     actions: List[ActionResult] = Field(default_factory=list)
+    mode: Literal["deterministic", "llm_proposal"] = "deterministic"
+    proposed_action: Dict[str, Any] | None = None
+    executed: bool = True
+    result: Dict[str, Any] | None = None
 
 
 class OrchestrateErrorResponse(BaseModel):

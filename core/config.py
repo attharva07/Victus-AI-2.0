@@ -27,6 +27,10 @@ class CameraConfig:
 @dataclass(frozen=True)
 class OrchestratorConfig:
     enable_llm_fallback: bool
+    llm_enabled: bool
+    llm_provider: str
+    llm_allow_autoexec: bool
+    llm_autoexec_min_confidence: float
 
 
 def _default_base_dir() -> Path:
@@ -107,7 +111,24 @@ def get_camera_config() -> CameraConfig:
     )
 
 
+def _parse_float(value: str | None, default: float) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
 def get_orchestrator_config() -> OrchestratorConfig:
+    llm_enabled = _parse_bool(os.getenv("VICTUS_LLM_ENABLED"), False)
+    # Legacy compatibility: fallback env still enables proposer path if set.
+    legacy_fallback = _parse_bool(os.getenv("VICTUS_ENABLE_LLM_FALLBACK"), False)
+    llm_provider = os.getenv("VICTUS_LLM_PROVIDER", "stub").strip().lower() or "stub"
     return OrchestratorConfig(
-        enable_llm_fallback=_parse_bool(os.getenv("VICTUS_ENABLE_LLM_FALLBACK"), False)
+        enable_llm_fallback=(llm_enabled or legacy_fallback),
+        llm_enabled=llm_enabled,
+        llm_provider=llm_provider,
+        llm_allow_autoexec=_parse_bool(os.getenv("VICTUS_LLM_ALLOW_AUTOEXEC"), False),
+        llm_autoexec_min_confidence=_parse_float(os.getenv("VICTUS_LLM_AUTOEXEC_MIN_CONFIDENCE"), 0.90),
     )

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from adapters.llm.provider import LLMProvider
+from pydantic import BaseModel, ValidationError
+
+from adapters.llm.provider import LLMProposer, ProposalResult
 from core.camera.errors import CameraError
 from core.camera.service import CameraService
 from core.config import get_orchestrator_config
 from core.filesystem.service import list_sandbox_files, read_sandbox_file, write_sandbox_file
 from core.finance.service import add_transaction, list_transactions, summary
-from core.logging.audit import audit_event
+from core.logging.audit import audit_event, safe_excerpt, text_hash
 from core.memory.service import add_memory, delete_memory, list_recent, search_memories
 from core.orchestrator.deterministic import parse_intent
 from core.orchestrator.policy import validate_intent
@@ -17,6 +19,65 @@ from core.orchestrator.schemas import (
     OrchestrateRequest,
     OrchestrateResponse,
 )
+
+_PROPOSER_CANDIDATES = [
+    "memory.add",
+    "memory.search",
+    "finance.add_transaction",
+    "finance.list_transactions",
+    "files.read",
+    "files.write",
+    "camera.status",
+]
+
+_PROPOSER_ALLOWLIST = set(_PROPOSER_CANDIDATES)
+_SAFE_AUTOEXEC_ALLOWLIST = {"memory.add", "memory.search"}
+
+
+class _MemoryAddArgs(BaseModel):
+    content: str
+
+
+class _MemorySearchArgs(BaseModel):
+    query: str = ""
+    tags: list[str] | None = None
+    limit: int = 10
+
+
+class _FinanceAddArgs(BaseModel):
+    amount: float
+    category: str
+    merchant: str | None = None
+
+
+class _FinanceListArgs(BaseModel):
+    category: str | None = None
+    limit: int = 50
+
+
+class _FilesReadArgs(BaseModel):
+    path: str
+
+
+class _FilesWriteArgs(BaseModel):
+    path: str
+    content: str = ""
+    mode: str = "overwrite"
+
+
+class _CameraStatusArgs(BaseModel):
+    pass
+
+
+_ARG_SCHEMAS: dict[str, type[BaseModel]] = {
+    "memory.add": _MemoryAddArgs,
+    "memory.search": _MemorySearchArgs,
+    "finance.add_transaction": _FinanceAddArgs,
+    "finance.list_transactions": _FinanceListArgs,
+    "files.read": _FilesReadArgs,
+    "files.write": _FilesWriteArgs,
+    "camera.status": _CameraStatusArgs,
+}
 
 
 def _deterministic_route(request: OrchestrateRequest) -> Intent | None:
@@ -109,35 +170,105 @@ def _execute_intent(intent: Intent) -> tuple[str, list[ActionResult]]:
     return "No action executed.", []
 
 
-def route_intent(
-    request: OrchestrateRequest, llm_provider: LLMProvider
-) -> OrchestrateResponse | OrchestrateErrorResponse:
-    intent = _deterministic_route(request)
-    if intent is None:
-        config = get_orchestrator_config()
-        if config.enable_llm_fallback:
-            proposed = llm_provider.propose_intent(request)
-            if proposed is not None and proposed.confidence >= 0.7:
-                intent = proposed
-        if intent is None:
-            text = request.normalized_text().strip()
-            if len(text.split()) < 3:
-                return OrchestrateErrorResponse(
-                    error="clarify",
-                    message="Please provide more detail so I can route this deterministically.",
-                    fields={"text": "include an explicit action and target"},
-                )
-            return OrchestrateErrorResponse(
-                error="unknown_intent",
-                message="I could not deterministically map that request to a supported action.",
-                candidates=["memory", "finance", "files", "camera"],
-            )
-    intent = validate_intent(intent)
-    if intent.action == "noop":
+def _unknown_intent_response(text: str) -> OrchestrateErrorResponse:
+    if len(text.split()) < 3:
         return OrchestrateErrorResponse(
-            error="unknown_intent",
-            message="I could not deterministically map that request to a supported action.",
-            candidates=["memory", "finance", "files", "camera"],
+            error="clarify",
+            message="Please provide more detail so I can route this deterministically.",
+            fields={"text": "include an explicit action and target"},
         )
-    message, actions = _execute_intent(intent)
-    return OrchestrateResponse(intent=intent, message=message, actions=actions)
+    return OrchestrateErrorResponse(
+        error="unknown_intent",
+        message="I could not deterministically map that request to a supported action.",
+        candidates=["memory", "finance", "files", "camera"],
+    )
+
+
+def _validate_proposal(proposal: ProposalResult) -> Intent | None:
+    if not proposal.ok or proposal.action is None:
+        return None
+    if proposal.action not in _PROPOSER_ALLOWLIST:
+        return None
+    schema = _ARG_SCHEMAS.get(proposal.action)
+    if schema is None:
+        return None
+    try:
+        parsed_args = schema.model_validate(proposal.args)
+    except ValidationError:
+        return None
+    return Intent(action=proposal.action, parameters=parsed_args.model_dump(), confidence=proposal.confidence)
+
+
+def route_intent(
+    request: OrchestrateRequest, llm_provider: LLMProposer
+) -> OrchestrateResponse | OrchestrateErrorResponse:
+    text = request.normalized_text().strip()
+    intent = _deterministic_route(request)
+    if intent is not None:
+        intent = validate_intent(intent)
+        if intent.action == "noop":
+            return _unknown_intent_response(text)
+        message, actions = _execute_intent(intent)
+        return OrchestrateResponse(intent=intent, message=message, actions=actions, mode="deterministic", executed=True)
+
+    config = get_orchestrator_config()
+    if not config.enable_llm_fallback:
+        return _unknown_intent_response(text)
+
+    audit_event(
+        "llm.propose.request",
+        text_hash=text_hash(text),
+        text_excerpt=safe_excerpt(text),
+        domain=request.domain,
+        candidate_count=len(_PROPOSER_CANDIDATES),
+    )
+    proposal = llm_provider.propose(text=text, domain=request.domain, candidates=_PROPOSER_CANDIDATES, context=request.context)
+    audit_event(
+        "llm.propose.result",
+        ok=proposal.ok,
+        action=proposal.action,
+        confidence=proposal.confidence,
+        reason=safe_excerpt(proposal.reason, max_len=120),
+    )
+
+    validated_intent = _validate_proposal(proposal)
+    if validated_intent is None:
+        return _unknown_intent_response(text)
+    validated_intent = validate_intent(validated_intent)
+    if validated_intent.action == "noop":
+        return _unknown_intent_response(text)
+
+    proposed_action = {
+        "action": validated_intent.action,
+        "args": validated_intent.parameters,
+        "confidence": proposal.confidence,
+        "reason": proposal.reason,
+    }
+    should_autoexec = (
+        config.llm_allow_autoexec
+        and proposal.confidence >= config.llm_autoexec_min_confidence
+        and validated_intent.action in _SAFE_AUTOEXEC_ALLOWLIST
+    )
+
+    if not should_autoexec:
+        return OrchestrateResponse(
+            intent=validated_intent,
+            message="Proposed action available for confirmation.",
+            actions=[],
+            mode="llm_proposal",
+            proposed_action=proposed_action,
+            executed=False,
+            result=None,
+        )
+
+    message, actions = _execute_intent(validated_intent)
+    result_payload = actions[0].result if actions else None
+    return OrchestrateResponse(
+        intent=validated_intent,
+        message=message,
+        actions=actions,
+        mode="llm_proposal",
+        proposed_action=proposed_action,
+        executed=True,
+        result=result_payload,
+    )

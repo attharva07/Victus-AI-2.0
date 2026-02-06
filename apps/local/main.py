@@ -14,7 +14,7 @@ from core.config import ensure_directories
 from core.filesystem.sandbox import FileSandboxError
 from core.filesystem.service import list_sandbox_files, read_sandbox_file, write_sandbox_file
 from core.finance.service import add_transaction, list_transactions, summary
-from core.logging.audit import audit_event
+from core.logging.audit import audit_event, safe_excerpt, text_hash
 from core.logging.logger import get_logger
 from core.memory.service import add_memory, delete_memory, list_recent, search_memories
 from core.orchestrator.router import route_intent
@@ -144,7 +144,13 @@ def create_app() -> FastAPI:
     def orchestrate(
         payload: OrchestrateRequest, user: str = Depends(require_user)
     ) -> OrchestrateResponse | OrchestrateErrorResponse:
-        audit_event("orchestrate_requested", username=user, utterance=payload.normalized_text())
+        user_text = payload.normalized_text()
+        audit_event(
+            "orchestrate_requested",
+            username=user,
+            text_hash=text_hash(user_text),
+            text_excerpt=safe_excerpt(user_text),
+        )
         return route_intent(payload, llm_provider)
 
     @app.post("/memory/add")
